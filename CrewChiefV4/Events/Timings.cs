@@ -212,9 +212,9 @@ namespace CrewChiefV4.Events
 
         private Boolean isNearRaceEnd(GameStateData currentGameState)
         {
-            if (currentGameState.SessionData.SessionNumberOfLaps > 0)
+            if (!currentGameState.SessionData.SessionHasFixedTime)
             {
-                if (currentGameState.SessionData.CompletedLaps == currentGameState.SessionData.SessionNumberOfLaps)
+                if (currentGameState.SessionData.SessionLapsRemaining == 0)
                 {
                     // on last lap - check track length 
                     if (currentGameState.SessionData.TrackDefinition.trackLengthClass == TrackData.TrackLengthClass.LONG)
@@ -587,9 +587,10 @@ namespace CrewChiefV4.Events
                     }
                     if (!currentGameState.isLast())
                     {
+                        // play the gap behind at the point when the opponent crosses the line, so the gap is about the same as our current laptime
                         if (!playedGapBehindForThisLap && currentGapBehind > 0.05 && currentGameState.SessionData.LapTimeCurrent > 0 &&
                             currentGameState.SessionData.LapTimeCurrent >= currentGapBehind &&
-                            currentGameState.SessionData.LapTimeCurrent <= currentGapBehind + CrewChief._timeInterval.TotalSeconds)
+                            currentGameState.SessionData.LapTimeCurrent <= currentGapBehind + 1)
                         {
                             playedGapBehindForThisLap = true;
                             OpponentData opponent = currentGameState.getOpponentAtClassPosition(currentGameState.SessionData.ClassPosition + 1, currentGameState.carClass);
@@ -757,24 +758,6 @@ namespace CrewChiefV4.Events
         private enum GapStatus
         {
             CLOSE, INCREASING, DECREASING, OTHER, NONE
-        }
-
-        private float getOpponentBestLap(List<float> opponentLapTimes, int lapsToCheck)
-        {
-            if (opponentLapTimes == null && opponentLapTimes.Count == 0)
-            {
-                return -1;
-            }
-            float bestLap = opponentLapTimes[opponentLapTimes.Count - 1];
-            int minIndex = opponentLapTimes.Count - lapsToCheck;
-            for (int i = opponentLapTimes.Count - 1; i >= minIndex; i--)
-            {
-                if (opponentLapTimes[i] > 0 && opponentLapTimes[i] < bestLap)
-                {
-                    bestLap = opponentLapTimes[i];
-                }
-            }
-            return bestLap;
         }
 
         private Boolean IsNewSectorOrGapPoint(GameStateData previousGameState, GameStateData currentGameState)

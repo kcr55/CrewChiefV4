@@ -194,7 +194,7 @@ namespace CrewChiefV4
         private TimeSpan overlapMessageDelay = TimeSpan.FromMilliseconds(UserSettings.GetUserSettings().getInt("spotter_overlap_delay"));
         private static Boolean use3WideLeftAndRight = UserSettings.GetUserSettings().getBoolean("spotter_enable_three_wide_left_and_right");
 
-        private DateTime nextMessageDue = DateTime.Now;
+        private DateTime nextMessageDue = DateTime.UtcNow;
         
         private DateTime timeWhenChannelShouldBeClosed;
 
@@ -250,7 +250,7 @@ namespace CrewChiefV4
         {
             carsOnLeftAtPreviousTick = 0;
             carsOnRightAtPreviousTick = 0;
-            timeWhenChannelShouldBeClosed = DateTime.Now;
+            timeWhenChannelShouldBeClosed = DateTime.UtcNow;
             channelLeftOpenTimerStarted = false;
             nextMessageType = NextMessageType.none;
             this.reportedSingleOverlapLeft = false;
@@ -260,15 +260,17 @@ namespace CrewChiefV4
             
             previousPositionAndVelocityData.Clear();
         }
-        
+
+        // opponentVelocity data is optional. It should be list of 2 element arrays with x and z speed, ordered
+        // the same as currentOpponentPositions
         public void triggerInternal(float playerRotationInRadians, float[] currentPlayerPosition,
-            float[] playerVelocityData, List<float[]> currentOpponentPositions)
+            float[] playerVelocityData, List<float[]> currentOpponentPositions, List<float[]> opponentVelocityData = null)
         {
             if (GameStateData.onManualFormationLap)
             {
                 return;
             }
-            DateTime now = DateTime.Now;
+            DateTime now = DateTime.UtcNow;
 
             if (currentPlayerPosition[0] != 0 && currentPlayerPosition[1] != 0 &&
                 currentPlayerPosition[0] != -1 && currentPlayerPosition[1] != -1 &&
@@ -293,28 +295,36 @@ namespace CrewChiefV4
                         if (opponentPositionInRange(currentOpponentPosition, currentPlayerPosition))
                         {
                             Boolean isOpponentVelocityInRange = false;
-                            PreviousPositionAndVelocityData opponentPreviousPositionAndVelocityData = null;
-                            if (previousPositionAndVelocityData.TryGetValue(i, out opponentPreviousPositionAndVelocityData))
+                            if (opponentVelocityData != null)
                             {
-                                float timeDiffSeconds = (float)(now - opponentPreviousPositionAndVelocityData.timeWhenLastUpdated).TotalSeconds;
-                                if (timeDiffSeconds >= calculateOpponentSpeedsEvery)
-                                {
-                                    opponentPreviousPositionAndVelocityData.timeWhenLastUpdated = now;
-                                    opponentPreviousPositionAndVelocityData.xSpeed = (currentOpponentPosition[0] - opponentPreviousPositionAndVelocityData.xPosition) / timeDiffSeconds;
-                                    opponentPreviousPositionAndVelocityData.zSpeed = (currentOpponentPosition[1] - opponentPreviousPositionAndVelocityData.zPosition) / timeDiffSeconds;
-                                    opponentPreviousPositionAndVelocityData.xPosition = currentOpponentPosition[0];
-                                    opponentPreviousPositionAndVelocityData.zPosition = currentOpponentPosition[1];
-                                }
-                                // we've updated this guys cached position and velocity, but we only need to check his speed if we don't already have 2 overlaps on both sides
-                                if (carsOnLeft < maxOverlapsPerSide || carsOnRight < maxOverlapsPerSide)
-                                {
-                                    isOpponentVelocityInRange = checkOpponentVelocityInRange(playerVelocityData[1], playerVelocityData[2],
-                                            opponentPreviousPositionAndVelocityData.xSpeed, opponentPreviousPositionAndVelocityData.zSpeed);
-                                }
+                                isOpponentVelocityInRange = checkOpponentVelocityInRange(playerVelocityData[1], playerVelocityData[2],
+                                    opponentVelocityData[i][0], opponentVelocityData[i][1]);
                             }
                             else
                             {
-                                previousPositionAndVelocityData.Add(i, new PreviousPositionAndVelocityData(currentOpponentPosition[0], currentOpponentPosition[1], now));
+                                PreviousPositionAndVelocityData opponentPreviousPositionAndVelocityData = null;
+                                if (previousPositionAndVelocityData.TryGetValue(i, out opponentPreviousPositionAndVelocityData))
+                                {
+                                    float timeDiffSeconds = (float)(now - opponentPreviousPositionAndVelocityData.timeWhenLastUpdated).TotalSeconds;
+                                    if (timeDiffSeconds >= calculateOpponentSpeedsEvery)
+                                    {
+                                        opponentPreviousPositionAndVelocityData.timeWhenLastUpdated = now;
+                                        opponentPreviousPositionAndVelocityData.xSpeed = (currentOpponentPosition[0] - opponentPreviousPositionAndVelocityData.xPosition) / timeDiffSeconds;
+                                        opponentPreviousPositionAndVelocityData.zSpeed = (currentOpponentPosition[1] - opponentPreviousPositionAndVelocityData.zPosition) / timeDiffSeconds;
+                                        opponentPreviousPositionAndVelocityData.xPosition = currentOpponentPosition[0];
+                                        opponentPreviousPositionAndVelocityData.zPosition = currentOpponentPosition[1];
+                                    }
+                                    // we've updated this guys cached position and velocity, but we only need to check his speed if we don't already have 2 overlaps on both sides
+                                    if (carsOnLeft < maxOverlapsPerSide || carsOnRight < maxOverlapsPerSide)
+                                    {
+                                        isOpponentVelocityInRange = checkOpponentVelocityInRange(playerVelocityData[1], playerVelocityData[2],
+                                                opponentPreviousPositionAndVelocityData.xSpeed, opponentPreviousPositionAndVelocityData.zSpeed);
+                                    }
+                                }
+                                else
+                                {
+                                    previousPositionAndVelocityData.Add(i, new PreviousPositionAndVelocityData(currentOpponentPosition[0], currentOpponentPosition[1], now));
+                                }
                             }
                             // again, if we already have max overlaps on both sides here we don't need to calculate another
                             if (carsOnLeft < maxOverlapsPerSide || carsOnRight < maxOverlapsPerSide)
@@ -432,7 +442,7 @@ namespace CrewChiefV4
             {
                 return;
             }
-            DateTime now = DateTime.Now;
+            DateTime now = DateTime.UtcNow;
             channelLeftOpenTimerStarted = false;
             int carsOnLeft = 0;
             int carsOnRight = 0;
@@ -734,7 +744,7 @@ namespace CrewChiefV4
                                 folderClearLeft, folderClearRight, folderClearInside, folderClearOutside, folderThreeWideYoureOnRight, folderThreeWideYoureOnLeft,
                                 folderThreeWideYoureOnInside, folderThreeWideYoureOnOutside });
                             QueuedMessage inTheMiddleMessage = new QueuedMessage(folderInTheMiddle, 0, null);
-                            inTheMiddleMessage.expiryTime = (DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond) + inTheMiddleMessageExpiresAfter;
+                            inTheMiddleMessage.expiryTime = (DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond) + inTheMiddleMessageExpiresAfter;
                             audioPlayer.playSpotterMessage(inTheMiddleMessage, true);
                             nextMessageType = NextMessageType.stillThere;
                             nextMessageDue = now.Add(repeatHoldFrequency);
@@ -756,7 +766,7 @@ namespace CrewChiefV4
                                 selectedMessage = folderThreeWideYoureOnLeft;
                             }
                             QueuedMessage threeWideOnLeftMessage = new QueuedMessage(selectedMessage, 0, null);
-                            threeWideOnLeftMessage.expiryTime = (DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond) + holdMessageExpiresAfter;
+                            threeWideOnLeftMessage.expiryTime = (DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond) + holdMessageExpiresAfter;
                             audioPlayer.playSpotterMessage(threeWideOnLeftMessage, true);
                             nextMessageType = NextMessageType.stillThere;
                             nextMessageDue = now.Add(repeatHoldFrequency);
@@ -775,7 +785,7 @@ namespace CrewChiefV4
                                 selectedMessage = folderThreeWideYoureOnRight;
                             }
                             QueuedMessage threeWideOnRightMessage = new QueuedMessage(selectedMessage, 0, null);
-                            threeWideOnRightMessage.expiryTime = (DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond) + holdMessageExpiresAfter;
+                            threeWideOnRightMessage.expiryTime = (DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond) + holdMessageExpiresAfter;
                             audioPlayer.playSpotterMessage(threeWideOnRightMessage, true);
                             nextMessageType = NextMessageType.stillThere;
                             nextMessageDue = now.Add(repeatHoldFrequency);
@@ -795,7 +805,7 @@ namespace CrewChiefV4
                                 selectedMessage = folderCarLeft;
                             }
                             QueuedMessage carLeftMessage = new QueuedMessage(selectedMessage, 0, null);
-                            carLeftMessage.expiryTime = (DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond) + holdMessageExpiresAfter;
+                            carLeftMessage.expiryTime = (DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond) + holdMessageExpiresAfter;
                             audioPlayer.playSpotterMessage(carLeftMessage, true);
                             nextMessageType = NextMessageType.stillThere;
                             nextMessageDue = now.Add(repeatHoldFrequency);
@@ -815,7 +825,7 @@ namespace CrewChiefV4
                                 selectedMessage = folderCarRight;
                             }
                             QueuedMessage carRightMessage = new QueuedMessage(selectedMessage, 0, null);
-                            carRightMessage.expiryTime = (DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond) + holdMessageExpiresAfter;
+                            carRightMessage.expiryTime = (DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond) + holdMessageExpiresAfter;
                             audioPlayer.playSpotterMessage(carRightMessage, true);
                             nextMessageType = NextMessageType.stillThere;
                             nextMessageDue = now.Add(repeatHoldFrequency);
@@ -826,7 +836,7 @@ namespace CrewChiefV4
                             if (reportedSingleOverlapLeft || reportedSingleOverlapRight || reportedDoubleOverlapLeft || reportedDoubleOverlapRight)
                             {
                                 QueuedMessage clearAllRoundMessage = new QueuedMessage(folderClearAllRound, 0, null);
-                                clearAllRoundMessage.expiryTime = (DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond) + clearAllRoundMessageExpiresAfter;
+                                clearAllRoundMessage.expiryTime = (DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond) + clearAllRoundMessageExpiresAfter;
                                 audioPlayer.removeImmediateMessages(new String[] { folderStillThere,folderCarLeft, folderCarRight, folderCarInside, folderCarOutside, folderInTheMiddle, 
                                     folderClearLeft, folderClearRight, folderClearInside, folderClearOutside, folderThreeWideYoureOnRight, folderThreeWideYoureOnLeft, 
                                     folderThreeWideYoureOnInside, folderThreeWideYoureOnOutside});
@@ -846,7 +856,7 @@ namespace CrewChiefV4
                                 if (carsOnRightCount == 0 && wasInMiddle)
                                 {
                                     QueuedMessage clearAllRoundMessage = new QueuedMessage(folderClearAllRound, 0, null);
-                                    clearAllRoundMessage.expiryTime = (DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond) + clearMessageExpiresAfter;
+                                    clearAllRoundMessage.expiryTime = (DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond) + clearMessageExpiresAfter;
                                     audioPlayer.removeImmediateMessages(new String[] {folderStillThere, folderCarLeft, folderCarRight, folderCarInside, folderCarOutside, folderInTheMiddle, 
                                         folderClearRight, folderClearLeft, folderClearInside, folderClearOutside, folderThreeWideYoureOnRight, folderThreeWideYoureOnLeft, 
                                         folderThreeWideYoureOnInside, folderThreeWideYoureOnOutside});
@@ -867,7 +877,7 @@ namespace CrewChiefV4
                                         selectedMessage = folderClearLeft;
                                     }
                                     QueuedMessage clearLeftMessage = new QueuedMessage(selectedMessage, 0, null);
-                                    clearLeftMessage.expiryTime = (DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond) + clearMessageExpiresAfter;
+                                    clearLeftMessage.expiryTime = (DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond) + clearMessageExpiresAfter;
                                     audioPlayer.removeImmediateMessages(new String[] { folderStillThere, folderCarLeft, folderCarRight, folderCarInside, folderCarOutside, folderInTheMiddle,
                                         folderClearRight, folderClearOutside, folderClearAllRound, folderThreeWideYoureOnRight, folderThreeWideYoureOnLeft, 
                                         folderThreeWideYoureOnInside, folderThreeWideYoureOnOutside});
@@ -899,7 +909,7 @@ namespace CrewChiefV4
                                 if (carsOnLeftCount == 0 && wasInMiddle)
                                 {
                                     QueuedMessage clearAllRoundMessage = new QueuedMessage(folderClearAllRound, 0, null);
-                                    clearAllRoundMessage.expiryTime = (DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond) + clearMessageExpiresAfter;
+                                    clearAllRoundMessage.expiryTime = (DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond) + clearMessageExpiresAfter;
                                     audioPlayer.removeImmediateMessages(new String[] {folderStillThere, folderCarLeft, folderCarRight, folderCarInside, folderCarOutside, folderInTheMiddle, 
                                         folderClearRight, folderClearLeft, folderClearInside, folderClearOutside, folderThreeWideYoureOnRight, folderThreeWideYoureOnLeft,
                                         folderThreeWideYoureOnInside, folderThreeWideYoureOnOutside});
@@ -920,7 +930,7 @@ namespace CrewChiefV4
                                         selectedMessage = folderClearRight;
                                     }
                                     QueuedMessage clearRightMessage = new QueuedMessage(selectedMessage, 0, null);
-                                    clearRightMessage.expiryTime = (DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond) + clearMessageExpiresAfter;
+                                    clearRightMessage.expiryTime = (DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond) + clearMessageExpiresAfter;
                                     audioPlayer.removeImmediateMessages(new String[] { folderStillThere, folderCarLeft, folderCarRight, folderCarInside, folderCarOutside, folderInTheMiddle, 
                                         folderClearLeft, folderClearInside, folderClearAllRound, folderThreeWideYoureOnRight, folderThreeWideYoureOnLeft,
                                         folderThreeWideYoureOnInside, folderThreeWideYoureOnOutside});                                    
@@ -948,7 +958,7 @@ namespace CrewChiefV4
                             if (reportedSingleOverlapLeft || reportedSingleOverlapRight || reportedDoubleOverlapLeft || reportedDoubleOverlapRight)
                             {
                                 QueuedMessage holdYourLineMessage = new QueuedMessage(folderStillThere, 0, null);
-                                holdYourLineMessage.expiryTime = (DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond) + holdMessageExpiresAfter;
+                                holdYourLineMessage.expiryTime = (DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond) + holdMessageExpiresAfter;
                                 audioPlayer.removeImmediateMessages(new String[] { folderClearRight, folderClearLeft, folderClearInside, folderClearOutside, folderClearAllRound });
                                 audioPlayer.playSpotterMessage(holdYourLineMessage, true);
                                 nextMessageType = NextMessageType.stillThere;

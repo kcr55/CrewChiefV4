@@ -24,8 +24,9 @@ namespace CrewChiefV4
         private Boolean disableBehaviorAlteringVoiceCommands = UserSettings.GetUserSettings().getBoolean("disable_behavior_altering_voice_commands");
         private RingBufferStream.RingBufferStream buffer;
         private NAudio.Wave.WaveInEvent waveIn;
-        private bool keepRecording = true;
-        //
+
+        private Thread nAudioAlwaysOnListenerThread = null;
+        private bool nAudioAlwaysOnkeepRecording = false;
 
         private String localeCountryPropertySetting = UserSettings.GetUserSettings().getString("speech_recognition_country");
 
@@ -251,7 +252,9 @@ namespace CrewChiefV4
         private String keyWord = UserSettings.GetUserSettings().getString("trigger_word_for_always_on_sre");
 
         private EventWaitHandle triggerTimeoutWaitHandle = new EventWaitHandle(false, EventResetMode.ManualReset);
+        private Thread restartWaitTimeoutThreadReference = null;
 
+        private Boolean disposed = false;
         static SpeechRecogniser () 
         {
             if (UserSettings.GetUserSettings().getBoolean("use_naudio_for_speech_recognition"))
@@ -393,6 +396,11 @@ namespace CrewChiefV4
         // default audio input device
         public void stop()
         {
+            if (!initialised)
+            {
+                return;
+            }
+
             try
             {
                 if (sre != null)
@@ -411,7 +419,7 @@ namespace CrewChiefV4
                     }
                 }
             }
-            catch (Exception e)
+            catch (Exception)
             {
                 Console.WriteLine("Error resetting recogniser");
             }
@@ -419,6 +427,11 @@ namespace CrewChiefV4
 
         public void Dispose()
         {
+            if (!initialised || disposed)
+            {
+                return;
+            }
+
             if (waveIn != null)
             {
                 try
@@ -431,12 +444,13 @@ namespace CrewChiefV4
             {
                 try
                 {
+                    // TODO_THREADS: with always on listening, this causes significant delay on shutdown, investigate (some worker thread alive).  Repro:  start app/close 
                     sre.Dispose();
                 }
                 catch (Exception) { }
                 sre = null;
             }
-            if(triggerSre != null)
+            if (triggerSre != null)
             {
                 try
                 {
@@ -446,6 +460,7 @@ namespace CrewChiefV4
                 triggerSre = null;
             }
             initialised = false;
+            disposed = true;
         }
 
         public SpeechRecogniser(CrewChief crewChief)
@@ -487,6 +502,12 @@ namespace CrewChiefV4
 
         private Boolean initWithLocale()
         {
+            Debug.Assert(!initialised);
+            if (initialised)
+            {
+                return false;
+            }
+
             String overrideCountry = null;
             if(localeCountryPropertySetting != null && localeCountryPropertySetting.Length == 2)
             {
@@ -591,6 +612,8 @@ namespace CrewChiefV4
 
         private void validateAndAdd(String[] speechPhrases, Choices choices)
         {
+            Debug.Assert(!initialised);  // Unless, we plan to add stuff dynamically, this should be false.
+
             if (speechPhrases != null && speechPhrases.Count() > 0)
             {
                 Boolean valid = true;
@@ -835,8 +858,6 @@ namespace CrewChiefV4
                         }
                     }
                     addCompoundChoices(SET_ALARM_CLOCK, false, this.hourChoices, minuteArray.ToArray(), true);
-                    
-                    
                 }
 
             }
@@ -1076,6 +1097,11 @@ namespace CrewChiefV4
 
         private Boolean switchFromRegularToTriggerRecogniser()
         {
+            if (!initialised)
+            {
+                return false;
+            }
+
             int attempts = 0;
             Boolean success = false;
             while (!success && attempts < 3)
@@ -1113,6 +1139,11 @@ namespace CrewChiefV4
 
         private Boolean switchFromTriggerToRegularRecogniser()
         {
+            if (!initialised)
+            {
+                return false;
+            }
+
             int attempts = 0;
             Boolean success = false;
             while (!success && attempts < 3)
@@ -1151,7 +1182,8 @@ namespace CrewChiefV4
         private void restartWaitTimeoutThread(int timeout)
         {
             triggerTimeoutWaitHandle.Set();
-            new Thread(() =>
+            ThreadManager.UnregisterTemporaryThread(restartWaitTimeoutThreadReference);
+            restartWaitTimeoutThreadReference = new Thread(() =>
             {
                 triggerTimeoutWaitHandle.Reset();
                 Thread.CurrentThread.IsBackground = true;
@@ -1171,11 +1203,19 @@ namespace CrewChiefV4
                         switchFromRegularToTriggerRecogniser();
                     }
                 }
-            }).Start();
+            });
+            restartWaitTimeoutThreadReference.Name = "SpeachRecognizer.restartWaitTimeoutThreadReference";
+            ThreadManager.RegisterTemporaryThread(restartWaitTimeoutThreadReference);
+            restartWaitTimeoutThreadReference.Start();
         }
 
         void trigger_SpeechRecognized(object sender, SpeechRecognizedEventArgs e)
         {
+            if (!initialised)
+            {
+                return;
+            }
+
             if (e.Result.Confidence > minimum_trigger_voice_recognition_confidence)
             {
                 Console.WriteLine("Heard keyword " + keyWord + ", waiting for command confidence " + e.Result.Confidence);
@@ -1190,6 +1230,11 @@ namespace CrewChiefV4
 
         void sre_SpeechRecognized(object sender, SpeechRecognizedEventArgs e)
         {
+            if (!initialised)
+            {
+                return;
+            }
+
             // cancel the thread that's waiting for a speech recognised timeout:
             triggerTimeoutWaitHandle.Set();
             SpeechRecogniser.waitingForSpeech = false;
@@ -1331,11 +1376,24 @@ namespace CrewChiefV4
 
         public void stopTriggerRecogniser()
         {
-            triggerSre.RecognizeAsyncCancel();
+            if (!initialised)
+            {
+                return;
+            }
+
+            if (triggerSre != null)
+            {
+                triggerSre.RecognizeAsyncCancel();
+            }
         }
 
         public void startContinuousListening()
         {
+            if (!initialised)
+            {
+                return;
+            }
+
             if (voiceOptionEnum == MainWindow.VoiceOptionEnum.TRIGGER_WORD)
             {   
                 try
@@ -1356,7 +1414,6 @@ namespace CrewChiefV4
                 {
                     Thread.Sleep(100);
                 }
-
             }
             else
             {
@@ -1366,6 +1423,11 @@ namespace CrewChiefV4
 
         public void recognizeAsync()
         {
+            if (!initialised)
+            {
+                return;
+            }
+
             Console.WriteLine("Opened channel - waiting for speech");
             SpeechRecogniser.waitingForSpeech = true;
             SpeechRecogniser.gotRecognitionResult = false;
@@ -1381,13 +1443,20 @@ namespace CrewChiefV4
                     }
                     else if (MainWindow.voiceOption == MainWindow.VoiceOptionEnum.ALWAYS_ON)
                     {
-                        keepRecording = true;
-                        (new Thread(() =>
+                        nAudioAlwaysOnkeepRecording = true;
+                        Debug.Assert(nAudioAlwaysOnListenerThread == null, "nAudio AlwaysOn Listener Thread wasn't shut down correctly.");
+
+                        // This thread is synchronized in recongizeAsyncCancel
+                        nAudioAlwaysOnListenerThread = new Thread(() =>
                         {
                             waveIn.StartRecording();
-                            while (keepRecording)
+                            while (nAudioAlwaysOnkeepRecording
+                                && crewChief.running)  // Exit as soon as we begin shutting down.
                             {
-                                Thread.Sleep(5000); // fill the 5s ringbuffer, then process
+                                if (!Utilities.InterruptedSleep(5000 /*totalWaitMillis*/, 1000 /*waitWindowMillis*/, () => nAudioAlwaysOnkeepRecording && crewChief.running /*keepWaitingPredicate*/))
+                                {
+                                    break;
+                                }
                                 Microsoft.Speech.AudioFormat.SpeechAudioFormatInfo safi =
                                     new Microsoft.Speech.AudioFormat.SpeechAudioFormatInfo(
                                         waveIn.WaveFormat.SampleRate, Microsoft.Speech.AudioFormat.AudioBitsPerSample.Sixteen, Microsoft.Speech.AudioFormat.AudioChannel.Mono);
@@ -1402,7 +1471,11 @@ namespace CrewChiefV4
                                 }
                             }
                             StopNAudioWaveIn();
-                        })).Start();
+                        });
+
+                        nAudioAlwaysOnListenerThread.Name = "SpeechRecogniser.nAudioAlwaysOnListenerThread";
+                        nAudioAlwaysOnListenerThread.Start();
+
                     }
                 }
                 else
@@ -1427,6 +1500,11 @@ namespace CrewChiefV4
 
         public void recognizeAsyncCancel()
         {
+            if (!initialised)
+            {
+                return;
+            }
+
             Console.WriteLine("Cancelling wait for speech");
             SpeechRecogniser.waitingForSpeech = false;
             if (useNAudio)
@@ -1449,8 +1527,25 @@ namespace CrewChiefV4
                 }
                 else if (MainWindow.voiceOption == MainWindow.VoiceOptionEnum.ALWAYS_ON)
                 {
-                    keepRecording = false;
+                    nAudioAlwaysOnkeepRecording = false;
                     sre.RecognizeAsyncCancel();
+
+                    // Wait for nAudioAlwaysOnListenerThread thread to exit.
+                    if (nAudioAlwaysOnListenerThread != null)
+                    {
+                        if (nAudioAlwaysOnListenerThread.IsAlive)
+                        {
+                            Console.WriteLine("Waiting for nAudio Always On listener to stop...");
+                            if (!nAudioAlwaysOnListenerThread.Join(5000))
+                            {
+                                var errMsg = "Warning: Timed out waiting for nAudio Always On listener to stop";
+                                Console.WriteLine(errMsg);
+                                Debug.WriteLine(errMsg);
+                            }
+                        }
+                        nAudioAlwaysOnListenerThread = null;
+                        Console.WriteLine("nAudio Always On listener stopped");
+                    }
                 }
             }
             else
@@ -1462,6 +1557,11 @@ namespace CrewChiefV4
 
         private void StopNAudioWaveIn()
         {
+            if (!initialised)
+            {
+                return;
+            }
+
             int retries = 0;
             Boolean stopped = false;
             while (!stopped && retries < 3)
@@ -1481,14 +1581,21 @@ namespace CrewChiefV4
 
         public void changeInputDevice(int dev)
         {
-            if (initialised)
+            if (!initialised)
             {
-                waveIn.DeviceNumber = dev;
+                return;
             }
+
+            waveIn.DeviceNumber = dev;
         }
 
         private void waveIn_DataAvailable(object sender, NAudio.Wave.WaveInEventArgs e)
         {
+            if (!initialised)
+            {
+                return;
+            }
+
             lock (buffer)
             {
                 buffer.Write(e.Buffer, (int)buffer.Position, e.BytesRecorded);
@@ -1497,6 +1604,11 @@ namespace CrewChiefV4
 
         private AbstractEvent getEventForSpeech(String recognisedSpeech)
         {
+            if (!initialised)
+            {
+                return null;
+            }
+
             if (ResultContains(recognisedSpeech, RADIO_CHECK, false))
             {
                 crewChief.respondToRadioCheck();
@@ -1573,7 +1685,7 @@ namespace CrewChiefV4
             {
                 return CrewChief.getEvent("Fuel");
             }
-            else if (// TODO: other battery queries
+            else if (
                 ResultContains(recognisedSpeech, HOWS_MY_BATTERY, false))
             {
                 return CrewChief.getEvent("Battery");

@@ -11,14 +11,12 @@ namespace CrewChiefV4.Events
 {
     class RaceTime : AbstractEvent
     {
-        // TODO: separate position & time remaining from "push push push" and "ease off and bring it home safely" messages
         private String folder5mins = "race_time/five_minutes_left";
         private String folder5minsLeading = "race_time/five_minutes_left_leading";
         private String folder5minsPodium = "race_time/five_minutes_left_podium";
         private String folder2mins = "race_time/two_minutes_left";
         private String folder0mins = "race_time/zero_minutes_left";
-        // TODO: 2 minutes remaining messages
-        //TODO: separate messages depending on the gap
+
         private String folder10mins = "race_time/ten_minutes_left";
         private String folder15mins = "race_time/fifteen_minutes_left";
         private String folder20mins = "race_time/twenty_minutes_left";
@@ -86,9 +84,9 @@ namespace CrewChiefV4.Events
             addExtraLap = currentGameState.SessionData.HasExtraLap;
             leaderHasFinishedRace = currentGameState.SessionData.LeaderHasFinishedRace;
             timeLeft = currentGameState.SessionData.SessionTimeRemaining;
-            if (currentGameState.SessionData.SessionNumberOfLaps > 0)
+            if (!currentGameState.SessionData.SessionHasFixedTime)
             {
-                lapsLeft = currentGameState.SessionData.SessionNumberOfLaps - currentGameState.SessionData.CompletedLaps;
+                lapsLeft = currentGameState.SessionData.SessionLapsRemaining;
                 sessionLengthIsTime = false;
             }
             else
@@ -122,7 +120,7 @@ namespace CrewChiefV4.Events
                     }
                     else if (currentGameState.SessionData.ClassPosition > currentGameState.SessionData.SessionStartClassPosition + 5 &&
                         !currentGameState.PitData.OnOutLap && !currentGameState.PitData.InPitlane &&
-                        currentGameState.SessionData.LapTimePrevious > currentGameState.SessionData.PlayerLapTimeSessionBest &&
+                        currentGameState.SessionData.LapTimePrevious > currentGameState.TimingData.getPlayerBestLapTime() &&
                         // yuk... AC SessionStartPosition is suspect so don't allow "you're shit" messages based on it.
                         CrewChief.gameDefinition.gameEnum != GameEnum.ASSETTO_32BIT && CrewChief.gameDefinition.gameEnum != GameEnum.ASSETTO_64BIT)
                     {
@@ -137,8 +135,9 @@ namespace CrewChiefV4.Events
                     Boolean timeWillBeZeroAtEndOfLeadersLap = false;
                     if (currentGameState.SessionData.OverallPosition == 1)
                     {
-                        timeWillBeZeroAtEndOfLeadersLap = timeLeft > 0 && currentGameState.SessionData.PlayerLapTimeSessionBest > 0 &&
-                            timeLeft < currentGameState.SessionData.PlayerLapTimeSessionBest - 5;
+                        float playerBest = currentGameState.TimingData.getPlayerBestLapTime();
+                        timeWillBeZeroAtEndOfLeadersLap = timeLeft > 0 && playerBest > 0 &&
+                            timeLeft < playerBest - 5;
                     }
                     else
                     {

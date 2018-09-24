@@ -124,7 +124,7 @@ namespace CrewChiefV4.rFactor2
             this.suspensionDamageThresholds.Add(new CornerData.EnumWithThresholds(DamageLevel.DESTROYED, 1.0f, 2.0f));
         }
 
-        private int[] minimumSupportedVersionParts = new int[] { 3, 0, 1, 0 };
+        private int[] minimumSupportedVersionParts = new int[] { 3, 1, 0, 0 };
         public static bool pluginVerified = false;
         public override void versionCheck(Object memoryMappedFileStruct)
         {
@@ -259,7 +259,7 @@ namespace CrewChiefV4.rFactor2
                         Console.WriteLine("Abrupt Session End: start to wait for session end.");
 
                         // Start waiting for session end.
-                        this.ticksWhenSessionEnded = DateTime.Now.Ticks;
+                        this.ticksWhenSessionEnded = DateTime.UtcNow.Ticks;
                         this.waitingToTerminateSession = true;
                         this.sessionWaitMessageCounter = 0;
 
@@ -268,7 +268,7 @@ namespace CrewChiefV4.rFactor2
 
                     if (!sessionStarted)
                     {
-                        var timeSinceWaitStarted = TimeSpan.FromTicks(DateTime.Now.Ticks - this.ticksWhenSessionEnded);
+                        var timeSinceWaitStarted = TimeSpan.FromTicks(DateTime.UtcNow.Ticks - this.ticksWhenSessionEnded);
                         if (timeSinceWaitStarted.TotalMilliseconds < RF2GameStateMapper.waitForSessionEndMillis)
                         {
                             if (this.sessionWaitMessageCounter % 10 == 0)
@@ -634,6 +634,9 @@ namespace CrewChiefV4.rFactor2
                 cgs.PitData.PitBoxPositionEstimate = pgs.PitData.PitBoxPositionEstimate;
 
                 cgs.hardPartsOnTrackData = pgs.hardPartsOnTrackData;
+
+                csd.formattedPlayerLapTimes = psd.formattedPlayerLapTimes;
+                cgs.TimingData = pgs.TimingData;
             }
 
             csd.SessionStartTime = csd.IsNewSession ? cgs.Now : psd.SessionStartTime;
@@ -894,12 +897,6 @@ namespace CrewChiefV4.rFactor2
                 }
             }
 
-            if (pgs != null)
-            {
-                foreach (var lt in psd.formattedPlayerLapTimes)
-                    csd.formattedPlayerLapTimes.Add(lt);
-            }
-
             csd.LeaderHasFinishedRace = leaderScoring.mFinishStatus == (int)rFactor2Constants.rF2FinishStatus.Finished;
             csd.LeaderSectorNumber = leaderScoring.mSector == 0 ? 3 : leaderScoring.mSector;
             csd.TimeDeltaFront = (float)Math.Abs(playerScoring.mTimeBehindNext);
@@ -1075,14 +1072,12 @@ namespace CrewChiefV4.rFactor2
             // some simple locking / spinning checks
             if (cgs.PositionAndMotionData.CarSpeed > 7.0f)
             {
-                // TODO: fix this properly - decrease the minRotatingSpeed from 2*pi to pi just to hide the problem
                 float minRotatingSpeed = (float)Math.PI * cgs.PositionAndMotionData.CarSpeed / cgs.carClass.maxTyreCircumference;
                 cgs.TyreData.LeftFrontIsLocked = Math.Abs(wheelFrontLeft.mRotation) < minRotatingSpeed;
                 cgs.TyreData.RightFrontIsLocked = Math.Abs(wheelFrontRight.mRotation) < minRotatingSpeed;
                 cgs.TyreData.LeftRearIsLocked = Math.Abs(wheelRearLeft.mRotation) < minRotatingSpeed;
                 cgs.TyreData.RightRearIsLocked = Math.Abs(wheelRearRight.mRotation) < minRotatingSpeed;
 
-                // TODO: fix this properly - increase the maxRotatingSpeed from 2*pi to 3*pi just to hide the problem
                 float maxRotatingSpeed = 3 * (float)Math.PI * cgs.PositionAndMotionData.CarSpeed / cgs.carClass.minTyreCircumference;
                 cgs.TyreData.LeftFrontIsSpinning = Math.Abs(wheelFrontLeft.mRotation) > maxRotatingSpeed;
                 cgs.TyreData.RightFrontIsSpinning = Math.Abs(wheelFrontRight.mRotation) > maxRotatingSpeed;
@@ -1383,7 +1378,7 @@ namespace CrewChiefV4.rFactor2
                 }
                 else
                 {
-                    opponent.DeltaTime = new DeltaTime(csd.TrackDefinition.trackLength, opponent.DistanceRoundTrack, DateTime.Now);
+                    opponent.DeltaTime = new DeltaTime(csd.TrackDefinition.trackLength, opponent.DistanceRoundTrack, DateTime.UtcNow);
                 }
                 opponent.DeltaTime.SetNextDeltaPoint(opponent.DistanceRoundTrack, opponent.CompletedLaps, opponent.Speed, cgs.Now);
 
@@ -1443,7 +1438,7 @@ namespace CrewChiefV4.rFactor2
                             (float)shared.scoring.mScoringInfo.mAmbientTemp,
                             csd.SessionHasFixedTime,
                             csd.SessionTimeRemaining,
-                            3);
+                            3, cgs.TimingData, CarData.IsCarClassEqual(opponent.CarClass, cgs.carClass));
                     }
                     opponent.StartNewLap(
                         opponent.CompletedLaps + 1,
@@ -1971,7 +1966,7 @@ namespace CrewChiefV4.rFactor2
                         (float)scoring.mScoringInfo.mAmbientTemp,
                         csd.SessionHasFixedTime,
                         csd.SessionTimeRemaining,
-                        3);
+                        3, cgs.TimingData);
                 }
 
                 csd.playerStartNewLap(

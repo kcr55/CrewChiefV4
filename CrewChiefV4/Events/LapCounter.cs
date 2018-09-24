@@ -304,7 +304,6 @@ namespace CrewChiefV4.Events
                     audioPlayer.playMessage(message, 10);
                 }
             }
-            // TODO: in the countdown / pre-lights phase, we don't know how long the race is going to be so we can't use the 'get on with it' messages :(
         }
 
         public Tuple<List<MessageFragment>, List<MessageFragment>> getPositionMessages(int positionWhenQueued)
@@ -533,16 +532,15 @@ namespace CrewChiefV4.Events
                 currentGameState.SessionData.SessionPhase != SessionPhase.Finished)
             {
                 // a new lap has been started in race mode
-                if (currentGameState.SessionData.CompletedLaps == currentGameState.SessionData.SessionNumberOfLaps - 2)
+                if (currentGameState.SessionData.SessionLapsRemaining == 2)
                 {
                     // disable pearls for the last part of the race
                     audioPlayer.disablePearlsOfWisdom = true;
                 }
                 int position = currentGameState.SessionData.ClassPosition;
-                if (currentGameState.SessionData.CompletedLaps == currentGameState.SessionData.SessionNumberOfLaps - 1
-                    || currentGameState.SessionData.IsLastLap)  // Note: this might trigger in timed race.  Is this desired?
+                if (currentGameState.SessionData.SessionLapsRemaining == 1 || currentGameState.SessionData.IsLastLap)  // Note: this might trigger in timed race.  Is this desired?
                 {
-                    Console.WriteLine("1 lap remaining, SessionHasFixedTime = " + currentGameState.SessionData.SessionHasFixedTime);
+                    Console.WriteLine("1 lap remaining");
                     if (position == 1)
                     {
                         audioPlayer.playMessage(new QueuedMessage(folderLastLapLeading, 0, this), 10);
@@ -560,9 +558,9 @@ namespace CrewChiefV4.Events
                         Console.WriteLine("1 lap left but position is < 1");
                     }
                 }
-                else if (currentGameState.SessionData.CompletedLaps == currentGameState.SessionData.SessionNumberOfLaps - 2)
+                else if (currentGameState.SessionData.SessionLapsRemaining == 2)
                 {
-                    Console.WriteLine("2 laps remaining, SessionHasFixedTime = " + currentGameState.SessionData.SessionHasFixedTime);
+                    Console.WriteLine("2 laps remaining");
                     if (position == 1)
                     {
                         audioPlayer.playMessage(new QueuedMessage(folderTwoLeftLeading, 0, this), 10);
@@ -572,7 +570,7 @@ namespace CrewChiefV4.Events
                         audioPlayer.playMessage(new QueuedMessage(folderTwoLeftTopThree, 0, this), 10);
                     }
                     else if (position >= currentGameState.SessionData.SessionStartClassPosition + 5 &&
-                        currentGameState.SessionData.LapTimePrevious > currentGameState.SessionData.PlayerLapTimeSessionBest)
+                        currentGameState.SessionData.LapTimePrevious > currentGameState.TimingData.getPlayerBestLapTime())
                     {
                         // yuk... don't yell at the player for being shit if he's playing Assetto. Because assetto drivers *are* shit, and also the SessionStartClassPosition
                         // might be invalid so perhaps they're really not being shit. At the moment.

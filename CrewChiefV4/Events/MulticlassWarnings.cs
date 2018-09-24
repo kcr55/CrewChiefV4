@@ -124,11 +124,11 @@ namespace CrewChiefV4.Events
             carClassEnumToSound.Add(CarData.CarClassEnum.GTC, folderGTC);
             carClassEnumToSound.Add(CarData.CarClassEnum.GTE, folderGTE);
             carClassEnumToSound.Add(CarData.CarClassEnum.GTLM, folderGTLM);
-            //carClassEnumToSound.Add(CarData.CarClassEnum.GT300, folderGT300);
+            carClassEnumToSound.Add(CarData.CarClassEnum.GT300, folderGT300);
             carClassEnumToSound.Add(CarData.CarClassEnum.GT500, folderGT500);
             carClassEnumToSound.Add(CarData.CarClassEnum.DTM, folderDTM);
             carClassEnumToSound.Add(CarData.CarClassEnum.GROUPA, folderGroupA);
-            //carClassEnumToSound.Add(CarData.CarClassEnum.GROUPB, folderGroupB);
+            carClassEnumToSound.Add(CarData.CarClassEnum.GROUPB, folderGroupB);
             carClassEnumToSound.Add(CarData.CarClassEnum.GROUPC, folderGroupC);
             carClassEnumToSound.Add(CarData.CarClassEnum.GROUP4, folderGroup4);
             carClassEnumToSound.Add(CarData.CarClassEnum.GROUP5, folderGroup5);
@@ -257,7 +257,6 @@ namespace CrewChiefV4.Events
                     }
                     else
                     {
-                        // TODO: THIS LOGIC FOR CHECKING THE STATE HAS CHANGED BEFORE ANNOUNCING IS BOLLOCKS
                         // check if this data is consistent with the previous data and that we've not warned about all these cars
                         if (otherClassWarningData.canAnnounce(previousCheckOtherClassWarningData, driverNamesForFasterClassLastWarnedAbout, driverNamesForSlowerClassLastWarnedAbout,
                             currentGameState.Now, timeOfLastSingleCarFasterClassWarning, timeOfLastMultipleCarFasterClassWarning, 
@@ -628,10 +627,9 @@ namespace CrewChiefV4.Events
             {
                 String playerCarClassIdentifier = currentGameState.carClass.getClassIdentifier();
                 float playerBestTime = currentGameState.SessionData.PlayerLapTimeSessionBest;
-                this.bestTimesByClass.Clear();
                 if (playerBestTime > 0)
                 {
-                    bestTimesByClass.Add(playerCarClassIdentifier, playerBestTime);
+                    bestTimesByClass[playerCarClassIdentifier] = playerBestTime;
                 }
                 foreach (OpponentData opponentData in currentGameState.OpponentData.Values)
                 {
@@ -701,14 +699,15 @@ namespace CrewChiefV4.Events
                 {
                     getBestTimesByClass(currentGameState);
                 }
+                String playerCarClassId = currentGameState.carClass.getClassIdentifier();
                 foreach (String carClassIdentifier in bestTimesByClass.Keys)
                 {
-                    if (String.Equals(carClassIdentifier, opponentClassIdentifier))
+                    if (!gotOpponentClassBestLap && String.Equals(carClassIdentifier, opponentClassIdentifier))
                     {
                         opponentClassBestLap = bestTimesByClass[carClassIdentifier];
                         gotOpponentClassBestLap = true;
                     }
-                    else if (String.Equals(carClassIdentifier, currentGameState.carClass.getClassIdentifier()))
+                    if (!gotPlayerClassBestLap && String.Equals(carClassIdentifier, playerCarClassId))
                     {
                         playerClassBestLap = bestTimesByClass[carClassIdentifier];
                         gotPlayerClassBestLap = true;

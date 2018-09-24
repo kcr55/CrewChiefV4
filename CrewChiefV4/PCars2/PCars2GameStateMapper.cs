@@ -58,7 +58,6 @@ namespace CrewChiefV4.PCars2
         private float severeBrakeDamageThreshold = 0.6f;
         private float destroyedBrakeDamageThreshold = 0.90f;
 
-        // TODO: have separate thresholds for tin-tops and open wheelers with wings here
         private float trivialAeroDamageThreshold = 0.1f;
         private float minorAeroDamageThreshold = 0.25f;
         private float severeAeroDamageThreshold = 0.6f;
@@ -85,7 +84,6 @@ namespace CrewChiefV4.PCars2
 
         private float lastCollisionMagnitude = 0;
         private Boolean collisionOnThisLap = false;
-        // TODO: what to use for this value
         private float collisionMagnitudeThreshold = 0.02f;
 
         // next track conditions sample due after:
@@ -509,7 +507,6 @@ namespace CrewChiefV4.PCars2
                 // copy persistent data from the previous game state
                 //
 
-                // TODO: this is just retarded. Clone the previousGameState and update it as required...
                 if (!currentGameState.SessionData.JustGoneGreen && previousGameState != null)
                 {
                     //Console.WriteLine("regular update, session type = " + currentGameState.SessionData.SessionType + " phase = " + currentGameState.SessionData.SessionPhase);
@@ -568,6 +565,8 @@ namespace CrewChiefV4.PCars2
                     currentGameState.retriedDriverNames = previousGameState.retriedDriverNames;
 
                     currentGameState.hardPartsOnTrackData = previousGameState.hardPartsOnTrackData;
+
+                    currentGameState.TimingData = previousGameState.TimingData;
                 }                
             }
 
@@ -639,7 +638,8 @@ namespace CrewChiefV4.PCars2
 
                 currentGameState.SessionData.playerCompleteLapWithProvidedLapTime(currentGameState.SessionData.OverallPosition, currentGameState.SessionData.SessionRunningTime,
                         shared.mLastLapTime, currentGameState.SessionData.CurrentLapIsValid, currentGameState.PitData.InPitlane, shared.mRainDensity > 0, 
-                        shared.mTrackTemperature, shared.mAmbientTemperature, currentGameState.SessionData.SessionHasFixedTime, currentGameState.SessionData.SessionTimeRemaining, 3);
+                        shared.mTrackTemperature, shared.mAmbientTemperature, currentGameState.SessionData.SessionHasFixedTime,
+                        currentGameState.SessionData.SessionTimeRemaining, 3, currentGameState.TimingData);
                 currentGameState.SessionData.playerStartNewLap(currentGameState.SessionData.CompletedLaps + 1,
                     currentGameState.SessionData.OverallPosition, currentGameState.PitData.InPitlane, currentGameState.SessionData.SessionRunningTime);
             }
@@ -799,7 +799,8 @@ namespace CrewChiefV4.PCars2
                                             participantStruct.mCurrentLapDistance, shared.mRainDensity == 1,
                                             shared.mAmbientTemperature, shared.mTrackTemperature,
                                             currentGameState.SessionData.SessionHasFixedTime, currentGameState.SessionData.SessionTimeRemaining,
-                                            lastSectorTime, shared.mLapsInvalidated[i] == 1, currentGameState.SessionData.TrackDefinition.distanceForNearPitEntryChecks);
+                                            lastSectorTime, shared.mLapsInvalidated[i] == 1, currentGameState.SessionData.TrackDefinition.distanceForNearPitEntryChecks,
+                                            currentGameState.TimingData, currentGameState.carClass);
 
                                     if (previousOpponentData != null)
                                     {
@@ -990,7 +991,7 @@ namespace CrewChiefV4.PCars2
             currentGameState.CarDamageData.BrakeDamageStatus = CornerData.getCornerData(brakeDamageThresholds,
                 shared.mBrakeDamage[0], shared.mBrakeDamage[1], shared.mBrakeDamage[2], shared.mBrakeDamage[3]);
 
-            currentGameState.EngineData.EngineOilPressure = shared.mOilPressureKPa; // todo: units conversion
+            currentGameState.EngineData.EngineOilPressure = shared.mOilPressureKPa;
             currentGameState.EngineData.EngineOilTemp = shared.mOilTempCelsius;
             currentGameState.EngineData.EngineWaterTemp = shared.mWaterTempCelsius;
             currentGameState.EngineData.MaxEngineRpm = shared.mMaxRPM;
@@ -1130,14 +1131,12 @@ namespace CrewChiefV4.PCars2
             if (shared.mSpeed > 7 && currentGameState.carClass != null &&
                 currentGameState.carClass.carClassEnum != CarData.CarClassEnum.Kart_1 && currentGameState.carClass.carClassEnum != CarData.CarClassEnum.Kart_2)
             {
-                // TODO: fix this properly - decrease the minRotatingSpeed from 2*pi to pi just to hide the problem
                 float minRotatingSpeed = (float)Math.PI * shared.mSpeed / currentGameState.carClass.maxTyreCircumference;
                 currentGameState.TyreData.LeftFrontIsLocked = Math.Abs(shared.mTyreRPS[0]) < minRotatingSpeed;
                 currentGameState.TyreData.RightFrontIsLocked = Math.Abs(shared.mTyreRPS[1]) < minRotatingSpeed;
                 currentGameState.TyreData.LeftRearIsLocked = Math.Abs(shared.mTyreRPS[2]) < minRotatingSpeed;
                 currentGameState.TyreData.RightRearIsLocked = Math.Abs(shared.mTyreRPS[3]) < minRotatingSpeed;
 
-                // TODO: fix this properly - increase the maxRotatingSpeed from 2*pi to 3*pi just to hide the problem
                 float maxRotatingSpeed = 3 * (float)Math.PI * shared.mSpeed / currentGameState.carClass.minTyreCircumference;
                 currentGameState.TyreData.LeftFrontIsSpinning = Math.Abs(shared.mTyreRPS[0]) > maxRotatingSpeed;
                 currentGameState.TyreData.RightFrontIsSpinning = Math.Abs(shared.mTyreRPS[1]) > maxRotatingSpeed;
@@ -1304,7 +1303,8 @@ namespace CrewChiefV4.PCars2
             float sessionRunningTime, float secondsSinceLastUpdate, float[] currentWorldPosition, float[] previousWorldPosition,
             float speed, float worldRecordLapTime, float worldRecordS1Time, float worldRecordS2Time, float worldRecordS3Time, 
             float distanceRoundTrack, Boolean isRaining, float trackTemp, float airTemp, 
-            Boolean sessionLengthIsTime, float sessionTimeRemaining, float lastSectorTime, Boolean lapInvalidated, float nearPitEntryPointDistance)
+            Boolean sessionLengthIsTime, float sessionTimeRemaining, float lastSectorTime, Boolean lapInvalidated, float nearPitEntryPointDistance,
+            TimingData timingData, CarData.CarClass playerCarClass)
         {
             float previousDistanceRoundTrack = opponentData.DistanceRoundTrack;
             
@@ -1335,7 +1335,8 @@ namespace CrewChiefV4.PCars2
                             lapInvalidated = true;
                         }
                         opponentData.CompleteLapWithLastSectorTime(racePosition, lastSectorTime, sessionRunningTime, 
-                            !lapInvalidated, isRaining, trackTemp, airTemp, sessionLengthIsTime, sessionTimeRemaining, 3);
+                            !lapInvalidated, isRaining, trackTemp, airTemp, sessionLengthIsTime, sessionTimeRemaining, 3, timingData, 
+                            CarData.IsCarClassEqual(opponentData.CarClass, playerCarClass));
                         
                     }
                     opponentData.StartNewLap(completedLaps + 1, racePosition, isInPits || isLeavingPits, sessionRunningTime, isRaining, trackTemp, airTemp);
@@ -1374,7 +1375,7 @@ namespace CrewChiefV4.PCars2
             opponentData.CurrentSectorNumber = (int)participantStruct.mCurrentSector + 1;   // zero indexed
             opponentData.WorldPosition = new float[] { participantStruct.mWorldPosition[0], participantStruct.mWorldPosition[2] };
             opponentData.DistanceRoundTrack = participantStruct.mCurrentLapDistance;
-            opponentData.DeltaTime = new DeltaTime(trackLength, opponentData.DistanceRoundTrack, DateTime.Now);
+            opponentData.DeltaTime = new DeltaTime(trackLength, opponentData.DistanceRoundTrack, DateTime.UtcNow);
             opponentData.CarClass = carClass;
             opponentData.IsActive = true;
             String nameToLog = opponentData.DriverRawName == null ? "unknown" : opponentData.DriverRawName;

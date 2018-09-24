@@ -136,7 +136,6 @@ namespace CrewChiefV4.Events
         private Boolean playedLimiterLineToPitBoxDistanceWarning = false;
         private Boolean played100MetreWarning = false;
         private Boolean played50MetreWarning = false;
-        private Boolean playedMoreThan150MetreWarning = false;
 
         private DateTime timeStartedAppoachingPitsCheck = DateTime.MaxValue;
 
@@ -188,7 +187,6 @@ namespace CrewChiefV4.Events
             pitStallOccupied = false;
             warnedAboutOccupiedPitOnThisLap = false;
             previousDistanceToBox = -1;
-            playedMoreThan150MetreWarning = false;
             played100MetreWarning = false;
             played50MetreWarning = false;
             playedLimiterLineToPitBoxDistanceWarning = false;
@@ -258,7 +256,6 @@ namespace CrewChiefV4.Events
                 {
                     // just entered the pitlane
                     previousDistanceToBox = 0;
-                    playedMoreThan150MetreWarning = false;
                     played100MetreWarning = false;
                     played50MetreWarning = false;
                     if (distanceToBox > 150 && !playedLimiterLineToPitBoxDistanceWarning)
@@ -275,10 +272,9 @@ namespace CrewChiefV4.Events
                         messageContents.Add(MessageFragment.Integer(distanceToBoxRounded, false));   // explicity disable short hundreds here, forcing the full "one hundred" sound
                         messageContents.Add(MessageFragment.Text(folderMetres));
                         QueuedMessage firstPitCountdown = new QueuedMessage("pit_entry_to_box_distance_warning", messageContents, 0, this);
-                        firstPitCountdown.expiryTime = (DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond) + 2000;
+                        firstPitCountdown.expiryTime = (DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond) + 2000;
                         audioPlayer.playMessage(firstPitCountdown, 10);
 
-                        playedMoreThan150MetreWarning = true;
                     }
                     playedLimiterLineToPitBoxDistanceWarning = true;
                 }
@@ -610,7 +606,6 @@ namespace CrewChiefV4.Events
                     }
 
                     // for Automobilista, sector update lag time means sometimes we miss the pit entrance before this message plays
-                    // TODO: Verify for rF2.
                     if (playBoxNowMessage && currentGameState.SessionData.SectorNumber == 2 && 
                         CrewChief.gameDefinition.gameEnum == GameEnum.RF1)
                     {

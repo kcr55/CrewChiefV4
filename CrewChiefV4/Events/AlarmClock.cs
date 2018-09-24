@@ -69,8 +69,9 @@ namespace CrewChiefV4.Events
                     Int32.TryParse(minutesString, out minutes);
                     if (hours != -1 && minutes != -1)
                     {
-                        SetAlarm(new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day, hours, minutes, 00));
-                        Console.WriteLine("Alarm has been set to " + new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day, hours, minutes, 00).ToString());
+                        DateTime now = DateTime.Now;
+                        SetAlarm(new DateTime(now.Year, now.Month, now.Day, hours, minutes, 00));
+                        Console.WriteLine("Alarm has been set to " + new DateTime(now.Year, now.Month, now.Day, hours, minutes, 00).ToString());
                     }
                 }
             }
@@ -176,12 +177,14 @@ namespace CrewChiefV4.Events
                     if (minutes < 10)
                     {
                         audioPlayer.playMessageImmediately(new QueuedMessage("alarm",
-                            MessageContents(notifyYouAt, hour, NumberReader.folderOh, minutes, isPastMidDay ? folderPM : folderAM), 0, null));
+                            MessageContents(notifyYouAt, hour, NumberReader.folderOh, minutes, isPastMidDay ? folderPM : folderAM), 0, null)
+                            { metadata = new SoundMetadata(SoundType.CRITICAL_MESSAGE, 0) });
                     }
                     else
                     {
                         audioPlayer.playMessageImmediately(new QueuedMessage("alarm",
-                            MessageContents(notifyYouAt, hour, minutes, isPastMidDay ? folderPM : folderAM), 0, null));
+                            MessageContents(notifyYouAt, hour, minutes, isPastMidDay ? folderPM : folderAM), 0, null)
+                            { metadata = new SoundMetadata(SoundType.CRITICAL_MESSAGE, 0) });
                     }
                 }
             }

@@ -792,8 +792,6 @@ namespace CrewChiefV4.Events
                     reportedEstimatedTimeLeftOneThirdWear = false;
                     reportedEstimatedTimeLeftTwoThirdsWear = false;
 
-                    // TODO: before we clear, should we grab estimates from the previous data?
-
                     tyreLifeYPointsTime.Clear();
                     tyreLifeYPointsSectors.Clear();
                     tyreLifeXPointsLFWearBySector.Clear();
@@ -1048,7 +1046,7 @@ namespace CrewChiefV4.Events
                 {
                     return -1;
                 }
-                int sectorCountAtFullWear = (int)Utilities.getYEstimate(x_data, tyreLifeYPointsSectors.ToArray(), 95, 2);
+                int sectorCountAtFullWear = (int)Utilities.getYEstimate(x_data, tyreLifeYPointsSectors.ToArray(), 97, 2);
                 // we know how many more sectors we expect to complete, so just divide it by 3
                 return (sectorCountAtFullWear / 3) - completedLaps;
             }

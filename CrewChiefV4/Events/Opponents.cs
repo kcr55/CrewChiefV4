@@ -174,7 +174,6 @@ namespace CrewChiefV4.Events
             int positionToCheck;
             if (opponentData.PositionOnApproachToPitEntry > 0)
             {
-                // TODO: THIS IS WRONG
                 positionToCheck = opponentData.PositionOnApproachToPitEntry;
             }
             else
@@ -315,7 +314,7 @@ namespace CrewChiefV4.Events
             // allow the retired and DQ checks under yellow:
             if (currentGameState.SessionData.SessionType == SessionType.Race &&
                 ((currentGameState.SessionData.SessionHasFixedTime && currentGameState.SessionData.SessionTimeRemaining > 0) ||
-                 (!currentGameState.SessionData.SessionHasFixedTime && currentGameState.SessionData.CompletedLaps < currentGameState.SessionData.SessionNumberOfLaps)))
+                 (!currentGameState.SessionData.SessionHasFixedTime && currentGameState.SessionData.SessionLapsRemaining > 0)))
             {
                 // don't bother processing retired and DQ'ed drivers and position changes if we're not allowed to use the names:
                 if (CrewChief.enableDriverNames)
@@ -400,7 +399,6 @@ namespace CrewChiefV4.Events
                     }
                 }
 
-                // TODO: should probably keep the leader-pitting message under FCY, not sure about the others
                 HashSet<String> announcedPitters = new HashSet<string>();
                 if (currentGameState.PitData.LeaderIsPitting &&
                     currentGameState.SessionData.SessionPhase != SessionPhase.Countdown && currentGameState.SessionData.SessionPhase != SessionPhase.Formation &&
@@ -838,7 +836,7 @@ namespace CrewChiefV4.Events
                         }
                     }
                 }
-                // TODO: the ahead / behind on track need to have something about class if it's different to the player class
+
                 else if (SpeechRecogniser.ResultContains(voiceMessage, SpeechRecogniser.WHOS_BEHIND_ON_TRACK))
                 {
                     string opponentKey = currentGameState.getOpponentKeyBehindOnTrack();

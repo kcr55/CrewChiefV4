@@ -21,6 +21,10 @@ namespace CrewChiefV4
     {
         public static Boolean Debugging = System.Diagnostics.Debugger.IsAttached;
 
+        // speechRecognizer and audioPlayer are shared by many threads.  They should be disposed after root threads stopped, in GlobalResources.Dispose.
+        public SpeechRecogniser speechRecogniser;
+        public AudioPlayer audioPlayer;
+
         readonly int timeBetweenProcConnectCheckMillis = 500;
         readonly int timeBetweenProcDisconnectCheckMillis = 2000;
         readonly int maxEventFailuresBeforeDisabling = 10;
@@ -28,9 +32,6 @@ namespace CrewChiefV4
         bool isGameProcessRunning = false;
 
         public static Boolean loadDataFromFile = false;
-
-        public SpeechRecogniser speechRecogniser;
-
         public static GameDefinition gameDefinition;
 
         public static Boolean readOpponentDeltasForEveryLap = false;
@@ -41,9 +42,9 @@ namespace CrewChiefV4
                 
         public static Boolean enableDriverNames = UserSettings.GetUserSettings().getBoolean("enable_driver_names");
 
-        public static TimeSpan _timeInterval = TimeSpan.FromMilliseconds(UserSettings.GetUserSettings().getInt("update_interval"));
+        private static int timeInterval = UserSettings.GetUserSettings().getInt("update_interval");
 
-        public static TimeSpan spotterInterval = TimeSpan.FromMilliseconds(UserSettings.GetUserSettings().getInt("spotter_update_interval"));
+        private static int spotterInterval = UserSettings.GetUserSettings().getInt("spotter_update_interval");
 
         private Boolean displaySessionLapTimes = UserSettings.GetUserSettings().getBoolean("display_session_lap_times");
 
@@ -52,7 +53,6 @@ namespace CrewChiefV4
 
         private static Dictionary<String, AbstractEvent> eventsList = new Dictionary<String, AbstractEvent>();
 
-        public AudioPlayer audioPlayer;
 
         Object lastSpotterState;
         Object currentSpotterState;
@@ -60,6 +60,11 @@ namespace CrewChiefV4
         Boolean stateCleared = false;
 
         public Boolean running = false;
+
+        // This value is set to false when we re-create main run thread, and is set to true
+        // once we get past file loading phase (which can be lenghty).
+        public Boolean dataFileReadDone = false;
+        public Boolean dataFileDumpDone = false;
 
         private TimeSpan minimumSessionParticipationTime = TimeSpan.FromSeconds(6);
 
@@ -75,9 +80,7 @@ namespace CrewChiefV4
 
         private Boolean runSpotterThread = false;
 
-        private Boolean disableImmediateMessages = UserSettings.GetUserSettings().getBoolean("disable_immediate_messages");
-
-        private GameStateMapper gameStateMapper;
+        private Thread spotterThread = null;
 
         private GameDataReader gameDataReader;
 
@@ -107,6 +110,10 @@ namespace CrewChiefV4
         {
             speechRecogniser = new SpeechRecogniser(this);
             audioPlayer = new AudioPlayer();
+
+            GlobalResources.speechRecogniser = speechRecogniser;
+            GlobalResources.audioPlayer = audioPlayer;
+
             audioPlayer.initialise();
             eventsList.Add("Timings", new Timings(audioPlayer));
             eventsList.Add("Position", new Position(audioPlayer));
@@ -162,26 +169,6 @@ namespace CrewChiefV4
 
         public void Dispose()
         {
-            running = false;
-            spotterIsRunning = false;
-            if (gameDataReader != null)
-            {
-                gameDataReader.Dispose();
-            }
-            audioPlayer.stopMonitor();
-            if (speechRecogniser != null)
-            {
-                speechRecogniser.Dispose();
-            }
-            if (audioPlayer != null)
-            {
-                audioPlayer.Dispose();
-            }
-
-            gameDataReader = null;
-            speechRecogniser.stop();
-            speechRecogniser = null;
-            audioPlayer = null;
         }
 
         public static AbstractEvent getEvent(String eventName)
@@ -392,11 +379,7 @@ namespace CrewChiefV4
 
         public void enableSpotter()
         {
-            if (disableImmediateMessages)
-            {
-                Console.WriteLine("Unable to start spotter - immediate messages are disabled");
-            }
-            else if (spotter == null)
+            if (spotter == null)
             {
                 Console.WriteLine("No spotter configured for this game");
             }
@@ -599,8 +582,16 @@ namespace CrewChiefV4
                 }
                 if (minute < 10)
                 {
-                    audioPlayer.playMessageImmediately(new QueuedMessage("current_time",
-                        AbstractEvent.MessageContents(hour, NumberReader.folderOh, now.Minute, isPastMidDay ? AlarmClock.folderPM : AlarmClock.folderAM), 0, null));
+                    if (minute == 0)
+                    {
+                        audioPlayer.playMessageImmediately(new QueuedMessage("current_time",
+                           AbstractEvent.MessageContents(hour, isPastMidDay ? AlarmClock.folderPM : AlarmClock.folderAM), 0, null));
+                    }
+                    else
+                    {
+                        audioPlayer.playMessageImmediately(new QueuedMessage("current_time",
+                            AbstractEvent.MessageContents(hour, NumberReader.folderOh, now.Minute, isPastMidDay ? AlarmClock.folderPM : AlarmClock.folderAM), 0, null));
+                    }
                 }
                 else
                 {
@@ -614,28 +605,52 @@ namespace CrewChiefV4
         {
             if (spotter != null)
             {
+                if (spotterThread != null)
+                {
+                    // This is the corner case when spotter was disabled during runtime.
+                    stopSpotterThread();
+                    spotterThread = null;
+                }
+                Debug.Assert(spotterThread == null);
                 lastSpotterState = null;
                 currentSpotterState = null;
                 spotterIsRunning = true;
                 ThreadStart work = spotterWork;
-                Thread thread = new Thread(work);
+                spotterThread = new Thread(work);
                 runSpotterThread = true;
-                thread.Start();
+                spotterThread.Start();
+            }
+        }
+
+        private void stopSpotterThread()
+        {
+            if (spotter != null && spotterThread != null)
+            {
+                runSpotterThread = false;
+
+                if (spotterThread.IsAlive)
+                {
+                    Console.WriteLine("Waiting for spotter thread to stop...");
+                    if (!spotterThread.Join(5000))
+                    {
+                        Console.WriteLine("Warning: Timed out waiting for spotter thread to stop to stop");
+                    }
+                }
+
+                Console.WriteLine("Spotter thread stopped");
+
+                spotterThread = null;
             }
         }
 
         private void spotterWork()
         {
-            int threadSleepTime = ((int) spotterInterval.Milliseconds / 10) + 1;
-            DateTime nextRunTime = DateTime.Now;
-            Console.WriteLine("Invoking spotter every " + spotterInterval.Milliseconds + "ms, pausing " + threadSleepTime + "ms between invocations");
-
+            Console.WriteLine("Invoking spotter every " + spotterInterval);
             try
             {
                 while (runSpotterThread)
                 {
-                    DateTime now = DateTime.Now;
-                    if (now > nextRunTime && spotter != null && gameDataReader.hasNewSpotterData())
+                    if (spotter != null && gameDataReader.hasNewSpotterData())
                     {
                         currentSpotterState = gameDataReader.ReadGameData(true);
                         if (lastSpotterState != null && currentSpotterState != null)
@@ -650,9 +665,8 @@ namespace CrewChiefV4
                             }
                         }
                         lastSpotterState = currentSpotterState;
-                        nextRunTime = DateTime.Now.Add(spotterInterval);
                     }
-                    Thread.Sleep(threadSleepTime);
+                    Thread.Sleep(spotterInterval);
                 }
             }
             catch (Exception)  // Exceptions can happen on Stop and DisconnectFromProcess.
@@ -669,76 +683,61 @@ namespace CrewChiefV4
 
         public Boolean Run(String filenameToRun, Boolean dumpToFile)
         {
-            loadDataFromFile = false;
-            audioPlayer.mute = false;
-            if (filenameToRun != null)
+            try
             {
-                loadDataFromFile = true;
-                GlobalBehaviourSettings.spotterEnabled = false;
-                dumpToFile = false;
-            }
-            else
-            {
-                // ensure the playback interval is re-initialised, in case we've been mucking about with it in the previous run.
-                _timeInterval = TimeSpan.FromMilliseconds(UserSettings.GetUserSettings().getInt("update_interval"));
-            }
-            SpeechRecogniser.waitingForSpeech = false;
-            SpeechRecogniser.gotRecognitionResult = false;
-            SpeechRecogniser.keepRecognisingInHoldMode = false;
-            gameStateMapper = GameStateReaderFactory.getInstance().getGameStateMapper(gameDefinition);
-            gameStateMapper.setSpeechRecogniser(speechRecogniser);
-            gameDataReader = GameStateReaderFactory.getInstance().getGameStateReader(gameDefinition);
-            gameDataReader.ResetGameDataFromFile();
+                PlaybackModerator.SetCrewChief(this);
 
-            gameDataReader.dumpToFile = dumpToFile;
-            if (gameDefinition.spotterName != null)
-            {
-                spotter = (Spotter)Activator.CreateInstance(Type.GetType(gameDefinition.spotterName),
-                    audioPlayer, GlobalBehaviourSettings.spotterEnabled);
-            }
-            else
-            {
-                Console.WriteLine("No spotter defined for game " + gameDefinition.friendlyName);
-                spotter = null;
-            }
-            running = true;
-            DateTime nextRunTime = DateTime.Now;
-            if (!audioPlayer.initialised)
-            {
-                Console.WriteLine("Failed to initialise audio player");
-                return false;
-            }
-            audioPlayer.startMonitor();
-            Boolean attemptedToRunGame = false;
-
-            Console.WriteLine("Polling for shared data every " + _timeInterval.Milliseconds + "ms");
-            Boolean sessionFinished = false;
-            while (running)
-            {
-                DateTime now = DateTime.Now;
-                //GameStateData.CurrentTime = now;
-                if (now > nextRunTime)
+                loadDataFromFile = false;
+                audioPlayer.mute = false;
+                if (filenameToRun != null)
                 {
-                    // ensure the updates don't get synchronised with the spotter / UDP receiver
-                    int updateTweak = Utilities.random.Next(10) - 5;
-                    if (filenameToRun != null)
-                    {
-                        if (CrewChief.playbackIntervalMilliseconds > 0)
-                        {
-                            _timeInterval = TimeSpan.FromMilliseconds(CrewChief.playbackIntervalMilliseconds);
-                            audioPlayer.mute = false;
-                        }
-                        else
-                        {
-                            _timeInterval = TimeSpan.Zero;
-                            audioPlayer.mute = true;
-                        }
-                    }
-                    nextRunTime = DateTime.Now.Add(_timeInterval);
-                    nextRunTime.Add(TimeSpan.FromMilliseconds(updateTweak));
+                    loadDataFromFile = true;
+                    GlobalBehaviourSettings.spotterEnabled = gameDefinition.gameEnum == GameEnum.F1_2018;
+                    dumpToFile = false;
+                }
+                else
+                {
+                    dataFileReadDone = true;  // Don't block UI as we won't be loading from the file.
+                }
+                SpeechRecogniser.waitingForSpeech = false;
+                SpeechRecogniser.gotRecognitionResult = false;
+                SpeechRecogniser.keepRecognisingInHoldMode = false;
+                GameStateMapper gameStateMapper = GameStateReaderFactory.getInstance().getGameStateMapper(gameDefinition);
+                gameStateMapper.setSpeechRecogniser(speechRecogniser);
+                gameDataReader = GameStateReaderFactory.getInstance().getGameStateReader(gameDefinition);
+                gameDataReader.ResetGameDataFromFile();
 
+                gameDataReader.dumpToFile = dumpToFile;
+                if (gameDefinition.spotterName != null)
+                {
+                    spotter = (Spotter)Activator.CreateInstance(Type.GetType(gameDefinition.spotterName),
+                        audioPlayer, GlobalBehaviourSettings.spotterEnabled);
+                }
+                else
+                {
+                    Console.WriteLine("No spotter defined for game " + gameDefinition.friendlyName);
+                    spotter = null;
+                }
+                running = true;
+                if (!audioPlayer.initialised)
+                {
+                    Console.WriteLine("Failed to initialise audio player");
+                    return false;
+                }
+                // mute the audio player for anything < 10ms
+                audioPlayer.mute = loadDataFromFile && CrewChief.playbackIntervalMilliseconds < 10;
+                audioPlayer.startMonitor();
+                Boolean attemptedToRunGame = false;
+
+                Console.WriteLine("Polling for shared data every " + timeInterval + "ms");
+                Boolean sessionFinished = false;
+                while (running)
+                {
+                    DateTime now = DateTime.UtcNow;
+                    //GameStateData.CurrentTime = now;
+                   
                     alarmClock.trigger(null, null);
-                    
+
                     if (!loadDataFromFile)
                     {
                         // Turns our checking for running process by name is an expensive system call.  So don't do that on every tick.
@@ -749,8 +748,8 @@ namespace CrewChiefV4
                             isGameProcessRunning = Utilities.IsGameRunning(gameDefinition.processName, gameDefinition.alternativeProcessNames);
                         }
 
-                        if (mapped 
-                            && !isGameProcessRunning 
+                        if (mapped
+                            && !isGameProcessRunning
                             && gameDefinition.HasAnyProcessNameAssociated())
                         {
                             gameDataReader.DisconnectFromProcess();
@@ -781,12 +780,12 @@ namespace CrewChiefV4
                     if (loadDataFromFile || mapped)
                     {
                         stateCleared = false;
-                        
+
                         if (loadDataFromFile)
                         {
                             try
                             {
-                                latestRawGameData = gameDataReader.ReadGameDataFromFile(filenameToRun);
+                                latestRawGameData = gameDataReader.ReadGameDataFromFile(filenameToRun, 3000);
                             }
                             catch (Exception e)
                             {
@@ -794,12 +793,13 @@ namespace CrewChiefV4
                             }
                             finally
                             {
-                                MainWindow.instance.startApplicationButton.Enabled = true;
+                                dataFileReadDone = true;
                             }
                             if (latestRawGameData == null)
                             {
+                                MainWindow.autoScrollConsole = true;
                                 Console.WriteLine("Reached the end of the data file, sleeping to clear queued messages");
-                                Thread.Sleep(5000);
+                                Utilities.InterruptedSleep(5000 /*totalWaitMillis*/, 50 /*waitWindowMillis*/, () => running /*keepWaitingPredicate*/);
                                 try
                                 {
                                     audioPlayer.purgeQueues();
@@ -839,19 +839,20 @@ namespace CrewChiefV4
                         catch (Exception e)
                         {
                             Console.WriteLine("Error mapping game data: " + e.Message + ", " + e.StackTrace);
-                        }                        
+                        }
                         // if we're paused or viewing another car, the mapper will just return the previous game state so we don't lose all the
                         // persistent state information. If this is the case, don't process any stuff
                         if (nextGameState != null && (nextGameState.SessionData.AbruptSessionEndDetected || nextGameState != currentGameState))
                         {
                             previousGameState = currentGameState;
                             currentGameState = nextGameState;
-                            // TODO: derived data for practice and qually sessions, if we need it
-                            // TODO: check this is safe at session end (do any of the mappers set the sessionType to Unavailable
-                            // as soon as it finishes? Don't think they do but needs checking)
                             if (currentGameState.SessionData.SessionType == SessionType.Race)
                             {
                                 gameStateMapper.populateDerivedRaceSessionData(currentGameState);
+                            }
+                            else
+                            {
+                                gameStateMapper.populateDerivedNonRaceSessionData(currentGameState);
                             }
                             if (!sessionFinished && currentGameState.SessionData.SessionPhase == SessionPhase.Finished
                                 && previousGameState != null)
@@ -900,12 +901,14 @@ namespace CrewChiefV4
                                         previousGameState.SessionData.NumCarsInPlayerClassAtStartOfSession, previousGameState.SessionData.CompletedLaps,
                                         currentGameState.SessionData.IsDisqualified, currentGameState.SessionData.IsDNF, currentGameState.Now);
                                 }
-
+                                audioPlayer.wakeMonitorThreadForRegularMessages(currentGameState.Now);
                                 sessionFinished = true;
                                 audioPlayer.disablePearlsOfWisdom = false;
+
                                 if (loadDataFromFile)
                                 {
-                                    Thread.Sleep(2000);
+                                    // TODO_THREADS: review all sleeps.
+                                    Utilities.InterruptedSleep(2000 /*totalWaitMillis*/, 100 /*waitWindowMillis*/, () => running /*keepWaitingPredicate*/);
                                 }
                             }
                             float prevTime = previousGameState == null ? 0 : previousGameState.SessionData.SessionRunningTime;
@@ -915,7 +918,6 @@ namespace CrewChiefV4
                                 PlaybackModerator.ClearVerbosityData();
                                 PlaybackModerator.lastBlockedMessageId = -1;
                                 audioPlayer.disablePearlsOfWisdom = false;
-                                audioPlayer.resetSoundTypesInImmediateQueue();
                                 displayNewSessionInfo(currentGameState);
                                 sessionFinished = false;
                                 if (!stateCleared)
@@ -958,16 +960,17 @@ namespace CrewChiefV4
                                         SoundCache.loadDriverNameSounds(usableDriverNames);
                                     }
                                 }
+                                audioPlayer.wakeMonitorThreadForRegularMessages(currentGameState.Now);
                             }
-                            // TODO: for AC free practice sessions, the SessionRunningTime is set to 1 hour in the mapper and stays there so this block never triggers
                             else if (previousGameState != null &&
+                                        (gameDefinition.gameEnum == GameEnum.F1_2018 ||
                                         (((gameDefinition.gameEnum == GameEnum.PCARS2 && currentGameState.SessionData.SessionPhase == SessionPhase.Countdown) ||
                                             currentGameState.SessionData.SessionRunningTime > previousGameState.SessionData.SessionRunningTime) ||
                                         (previousGameState.SessionData.SessionPhase != currentGameState.SessionData.SessionPhase)) ||
                                         ((gameDefinition.gameEnum == GameEnum.PCARS_32BIT || gameDefinition.gameEnum == GameEnum.PCARS_64BIT ||
                                                 gameDefinition.gameEnum == GameEnum.PCARS2 || gameDefinition.gameEnum == GameEnum.PCARS_NETWORK ||
                                                 gameDefinition.gameEnum == GameEnum.PCARS2_NETWORK) &&
-                                            currentGameState.SessionData.SessionHasFixedTime && currentGameState.SessionData.SessionTotalRunTime == -1))
+                                            currentGameState.SessionData.SessionHasFixedTime && currentGameState.SessionData.SessionTotalRunTime == -1)))
                             {
                                 if (!sessionFinished)
                                 {
@@ -992,16 +995,21 @@ namespace CrewChiefV4
                                 PlaybackModerator.UpdateAutoVerbosity(currentGameState);
 
                                 // Allow events to be processed after session finish.  Event should use applicableSessionPhases/applicableSessionTypes to opt in/out.
-                                foreach (KeyValuePair<String, AbstractEvent> entry in eventsList)
+                                // for now, don't trigger any events for F1 2018 as there's no game mapping
+                                if (gameDefinition.gameEnum != GameEnum.F1_2018)
                                 {
-                                    if (entry.Value.isApplicableForCurrentSessionAndPhase(currentGameState.SessionData.SessionType, currentGameState.SessionData.SessionPhase))
+                                    foreach (KeyValuePair<String, AbstractEvent> entry in eventsList)
                                     {
-                                        // special case - if we've crashed heavily and are waiting for a response from the driver, don't trigger other events
-                                        if (entry.Key.Equals("DamageReporting") || !DamageReporting.waitingForDriverIsOKResponse)
+                                        if (entry.Value.isApplicableForCurrentSessionAndPhase(currentGameState.SessionData.SessionType, currentGameState.SessionData.SessionPhase))
                                         {
-                                            triggerEvent(entry.Key, entry.Value, previousGameState, currentGameState);
+                                            // special case - if we've crashed heavily and are waiting for a response from the driver, don't trigger other events
+                                            if (entry.Key.Equals("DamageReporting") || !DamageReporting.waitingForDriverIsOKResponse)
+                                            {
+                                                triggerEvent(entry.Key, entry.Value, previousGameState, currentGameState);
+                                            }
                                         }
                                     }
+                                    audioPlayer.wakeMonitorThreadForRegularMessages(currentGameState.Now);
                                 }
                                 if (!sessionFinished)
                                 {
@@ -1010,7 +1018,8 @@ namespace CrewChiefV4
                                         DriverTrainingService.checkDistanceAndPlayIfNeeded(currentGameState.Now, previousGameState.PositionAndMotionData.DistanceRoundTrack,
                                             currentGameState.PositionAndMotionData.DistanceRoundTrack, audioPlayer);
                                     }
-                                    if (spotter != null && GlobalBehaviourSettings.spotterEnabled && !spotterIsRunning && !loadDataFromFile)
+                                    if (spotter != null && GlobalBehaviourSettings.spotterEnabled && !spotterIsRunning &&
+                                        (gameDefinition.gameEnum == GameEnum.F1_2018 || !loadDataFromFile))
                                     {
                                         Console.WriteLine("********** starting spotter***********");
                                         spotter.clearState();
@@ -1028,76 +1037,98 @@ namespace CrewChiefV4
                             }
                         }
                     }
+                    if (filenameToRun != null)
+                    {
+                        // mute the audio player for anything < 10ms
+                        audioPlayer.mute = CrewChief.playbackIntervalMilliseconds < 10;
+                        if (CrewChief.playbackIntervalMilliseconds > 0)
+                        {
+                            Thread.Sleep(CrewChief.playbackIntervalMilliseconds);
+                        }
+                    }
+                    else
+                    {
+                        Thread.Sleep(timeInterval);
+                    }
                 }
-                else
+                foreach (KeyValuePair<String, AbstractEvent> entry in eventsList)
                 {
-                    // ensure the updates don't get synchronised with the spotter / UDP receiver
-                    int threadSleepTime = 5 + Utilities.random.Next(10);
-                    Thread.Sleep(threadSleepTime);
-                    continue;
+                    entry.Value.clearState();
                 }
-            }
-            foreach (KeyValuePair<String, AbstractEvent> entry in eventsList)
-            {
-                entry.Value.clearState();
-            }
-            if (spotter != null)
-            {
-                spotter.clearState();
-            }
-            stateCleared = true;
-            currentGameState = null;
-            previousGameState = null;
-            sessionFinished = false;
-            faultingEvents.Clear();
-            faultingEventsCount.Clear();
-            PlaybackModerator.ClearVerbosityData();
-            PlaybackModerator.lastBlockedMessageId = -1;
-            if (audioPlayer != null)
-            {
-                audioPlayer.disablePearlsOfWisdom = false;
-                audioPlayer.resetSoundTypesInImmediateQueue();
-            }
-            sessionHasFailingEvent = false;
-            Console.WriteLine("Stopping queue monitor");
-            if (audioPlayer != null)
-            {
-                audioPlayer.stopMonitor();
-                audioPlayer.disablePearlsOfWisdom = false;
-            }
-            if (gameDataReader != null)
-            {
-                if (gameDataReader.dumpToFile)
+                if (spotter != null)
                 {
+                    spotter.clearState();
+                }
+                stateCleared = true;
+                currentGameState = null;
+                previousGameState = null;
+                sessionFinished = false;
+                faultingEvents.Clear();
+                faultingEventsCount.Clear();
+                PlaybackModerator.ClearVerbosityData();
+                PlaybackModerator.lastBlockedMessageId = -1;
+                if (audioPlayer != null)
+                {
+                    audioPlayer.disablePearlsOfWisdom = false;
+                }
+                sessionHasFailingEvent = false;
+                if (gameDataReader != null)
+                {
+                    if (gameDataReader.dumpToFile)
+                    {
+                        try
+                        {
+                            gameDataReader.DumpRawGameData();
+                        }
+                        finally
+                        {
+                            dataFileDumpDone = true;
+                        }
+                    }
+                    dataFileDumpDone = true;
                     try
                     {
-                        gameDataReader.DumpRawGameData();
+                        gameDataReader.stop();
+                        gameDataReader.DisconnectFromProcess();
                     }
-                    finally
+                    catch (Exception)
                     {
-                        // Restore start/stop buton.
-                        MainWindow.instance.startApplicationButton.Enabled = true;
+                        //ignore
                     }
                 }
-                try
+                if (SoundCache.dumpListOfUnvocalizedNames)
                 {
-                    gameDataReader.stop();
-                    gameDataReader.DisconnectFromProcess();
+                    DriverNameHelper.dumpUnvocalizedNames();
                 }
-                catch (Exception)
+                mapped = false;
+            }
+            finally
+            {
+                // Thread cleanup.
+
+                if (speechRecogniser != null)
                 {
-                    //ignore
+                    speechRecogniser.stop();
+                }
+
+                // Wait on child threads and release owned resources here.
+                Console.WriteLine("Stopping queue monitor");
+                if (audioPlayer != null)
+                {
+                    audioPlayer.stopMonitor();
+                    audioPlayer.disablePearlsOfWisdom = false;
+                }
+
+                stopSpotterThread();
+
+                // Release thread resources:
+                if (gameDataReader != null)
+                {
+                    gameDataReader.Dispose();
+                    gameDataReader = null;
                 }
             }
-            if (SoundCache.dumpListOfUnvocalizedNames)
-            {
-                DriverNameHelper.dumpUnvocalizedNames();
-            }
-            mapped = false;
-            if (speechRecogniser != null)
-            {
-                speechRecogniser.stop();
-            }
+
             return true;
         }
 
@@ -1143,6 +1174,10 @@ namespace CrewChiefV4
         {
             running = false;
             runSpotterThread = false;
+            if (audioPlayer != null)
+            {
+                audioPlayer.monitorRunning = false;
+            }
         }
 
         private void displayNewSessionInfo(GameStateData currentGameState)
@@ -1162,6 +1197,13 @@ namespace CrewChiefV4
                 CrewChief.gameDefinition.gameEnum == GameEnum.PCARS_NETWORK ||
                 CrewChief.gameDefinition.gameEnum == GameEnum.PCARS2 ||
                 CrewChief.gameDefinition.gameEnum == GameEnum.PCARS2_NETWORK;
+        }
+
+        // This has to be called before starting man Chief thread (runApp).
+        public void onRestart()
+        {
+            dataFileReadDone = false;
+            dataFileDumpDone = false;
         }
     }
 }

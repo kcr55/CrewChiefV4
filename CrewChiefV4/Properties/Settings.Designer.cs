@@ -73,18 +73,6 @@ namespace CrewChiefV4.Properties {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("False")]
-        public bool disable_immediate_messages {
-            get {
-                return ((bool)(this["disable_immediate_messages"]));
-            }
-            set {
-                this["disable_immediate_messages"] = value;
-            }
-        }
-        
-        [global::System.Configuration.UserScopedSettingAttribute()]
-        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("True")]
         public bool enable_spotter {
             get {
@@ -841,7 +829,7 @@ namespace CrewChiefV4.Properties {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("4")]
+        [global::System.Configuration.DefaultSettingValueAttribute("2")]
         public int frequency_of_race_sector_delta_reports {
             get {
                 return ((int)(this["frequency_of_race_sector_delta_reports"]));
@@ -2401,7 +2389,7 @@ namespace CrewChiefV4.Properties {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
         public bool pcars_enable_rain_prediction {
             get {
                 return ((bool)(this["pcars_enable_rain_prediction"]));
@@ -3440,6 +3428,78 @@ namespace CrewChiefV4.Properties {
             }
             set {
                 this["slow_class_car_warnings_in_race_only"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string f1_2018_launch_exe {
+            get {
+                return ((string)(this["f1_2018_launch_exe"]));
+            }
+            set {
+                this["f1_2018_launch_exe"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string f1_2018_launch_params {
+            get {
+                return ((string)(this["f1_2018_launch_params"]));
+            }
+            set {
+                this["f1_2018_launch_params"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool launch_f1_2018 {
+            get {
+                return ((bool)(this["launch_f1_2018"]));
+            }
+            set {
+                this["launch_f1_2018"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("20777")]
+        public int f1_2018_udp_data_port {
+            get {
+                return ((int)(this["f1_2018_udp_data_port"]));
+            }
+            set {
+                this["f1_2018_udp_data_port"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("5")]
+        public float f1_2018_spotter_car_length {
+            get {
+                return ((float)(this["f1_2018_spotter_car_length"]));
+            }
+            set {
+                this["f1_2018_spotter_car_length"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("5")]
+        public float pcars2_spotter_car_length {
+            get {
+                return ((float)(this["pcars2_spotter_car_length"]));
+            }
+            set {
+                this["pcars2_spotter_car_length"] = value;
             }
         }
     }
