@@ -15,9 +15,7 @@ namespace CrewChiefV4
 {
     public class SpeechRecogniser : IDisposable
     {
-        public object sreLock = new object();
         private SpeechRecognitionEngine sre;
-        private SpeechRecognitionEngine triggerSre;
 
         // used in nAudio mode:
         public static Dictionary<string, Tuple<string, int>> speechRecognitionDevices = new Dictionary<string, Tuple<string, int>>();
@@ -248,6 +246,8 @@ namespace CrewChiefV4
         // guard against race condition between closing channel and sre_SpeechRecognised event completing
         public static Boolean keepRecognisingInHoldMode = false;
 
+        private SpeechRecognitionEngine triggerSre;
+
         // This is the trigger phrase used to activate the 'full' SRE
         private String keyWord = UserSettings.GetUserSettings().getString("trigger_word_for_always_on_sre");
 
@@ -302,39 +302,32 @@ namespace CrewChiefV4
             {
                 return;
             }
-            lock (sreLock)
+            macroLookup.Clear();
+            if (macroGrammar != null && macroGrammar.Loaded)
             {
-                if (disposed || sre == null)
-                {
-                    return;
-                }
-                macroLookup.Clear();
-                if (macroGrammar != null && macroGrammar.Loaded)
-                {
-                    sre.UnloadGrammar(macroGrammar);
-                }
-                if (voiceTriggeredMacros.Count == 0)
-                {
-                    Console.WriteLine("No macro voice triggers defined for the current game.");
-                    return;
-                }
-                Choices macroChoices = new Choices();
-                foreach (String triggerPhrase in voiceTriggeredMacros.Keys)
-                {
-                    // validate?
-                    if (!macroLookup.ContainsKey(triggerPhrase))
-                    {
-                        macroLookup.Add(triggerPhrase, voiceTriggeredMacros[triggerPhrase]);
-                    }
-                    macroChoices.Add(triggerPhrase);
-
-                }
-                GrammarBuilder macroGrammarBuilder = new GrammarBuilder();
-                macroGrammarBuilder.Culture = cultureInfo;
-                macroGrammarBuilder.Append(macroChoices);
-                macroGrammar = new Grammar(macroGrammarBuilder);
-                sre.LoadGrammar(macroGrammar);
+                sre.UnloadGrammar(macroGrammar);
             }
+            if (voiceTriggeredMacros.Count == 0)
+            {
+                Console.WriteLine("No macro voice triggers defined for the current game.");
+                return;
+            }
+            Choices macroChoices = new Choices();
+            foreach (String triggerPhrase in voiceTriggeredMacros.Keys)
+            {
+                // validate?
+                if (!macroLookup.ContainsKey(triggerPhrase))
+                {
+                    macroLookup.Add(triggerPhrase, voiceTriggeredMacros[triggerPhrase]);
+                }
+                macroChoices.Add(triggerPhrase);
+
+            }
+            GrammarBuilder macroGrammarBuilder = new GrammarBuilder();
+            macroGrammarBuilder.Culture = cultureInfo;
+            macroGrammarBuilder.Append(macroChoices);
+            macroGrammar = new Grammar(macroGrammarBuilder);
+            sre.LoadGrammar(macroGrammar);
             Console.WriteLine("Loaded " + voiceTriggeredMacros.Count + " macro voice triggers into the speech recogniser");
         }
 
@@ -447,27 +440,24 @@ namespace CrewChiefV4
                 }
                 catch (Exception) { }
             }
-            lock (sreLock)
+            if (sre != null)
             {
-                if (sre != null)
+                try
                 {
-                    try
-                    {
-                        // TODO_THREADS: with always on listening, this causes significant delay on shutdown, investigate (some worker thread alive).  Repro:  start app/close 
-                        sre.Dispose();
-                    }
-                    catch (Exception) { }
-                    sre = null;
+                    // TODO_THREADS: with always on listening, this causes significant delay on shutdown, investigate (some worker thread alive).  Repro:  start app/close 
+                    sre.Dispose();
                 }
-                if (triggerSre != null)
+                catch (Exception) { }
+                sre = null;
+            }
+            if (triggerSre != null)
+            {
+                try
                 {
-                    try
-                    {
-                        triggerSre.Dispose();
-                    }
-                    catch (Exception) { }
-                    triggerSre = null;
+                    triggerSre.Dispose();
                 }
+                catch (Exception) { }
+                triggerSre = null;
             }
             initialised = false;
             disposed = true;
