@@ -254,7 +254,6 @@ namespace CrewChiefV4
         private EventWaitHandle triggerTimeoutWaitHandle = new EventWaitHandle(false, EventResetMode.ManualReset);
         private Thread restartWaitTimeoutThreadReference = null;
 
-        private Boolean disposed = false;
         static SpeechRecogniser () 
         {
             if (UserSettings.GetUserSettings().getBoolean("use_naudio_for_speech_recognition"))
@@ -292,7 +291,7 @@ namespace CrewChiefV4
                 }
             }
         }
-
+        
         // load voice commands for triggering keyboard macros. The String key of the input Dictionary is the
         // command list key in speech_recognition_config.txt. When one of these phrases is heard the map value
         // CommandMacro is executed.
@@ -313,15 +312,34 @@ namespace CrewChiefV4
                 return;
             }
             Choices macroChoices = new Choices();
-            foreach (String triggerPhrase in voiceTriggeredMacros.Keys)
+            foreach (KeyValuePair<String, ExecutableCommandMacro> entry in voiceTriggeredMacros)
             {
-                // validate?
-                if (!macroLookup.ContainsKey(triggerPhrase))
+                String triggerPhrase = entry.Key;
+                ExecutableCommandMacro executableCommandMacro = entry.Value;
+                if (executableCommandMacro.macro.intRange != null)
                 {
-                    macroLookup.Add(triggerPhrase, voiceTriggeredMacros[triggerPhrase]);
+                    foreach (KeyValuePair<String[], int> numberEntry in numberToNumber)
+                    {
+                        if (numberEntry.Value >= executableCommandMacro.macro.intRange.Item1 && numberEntry.Value <= executableCommandMacro.macro.intRange.Item2)
+                        {
+                            String thisPhrase = executableCommandMacro.macro.startPhrase + numberEntry.Key[0] + executableCommandMacro.macro.endPhrase;
+                            if (!macroLookup.ContainsKey(thisPhrase))
+                            {
+                                macroLookup.Add(thisPhrase, voiceTriggeredMacros[triggerPhrase]);
+                            }
+                            macroChoices.Add(thisPhrase);
+                        }
+                    }
                 }
-                macroChoices.Add(triggerPhrase);
-
+                else
+                {
+                    // validate?
+                    if (!macroLookup.ContainsKey(triggerPhrase))
+                    {
+                        macroLookup.Add(triggerPhrase, voiceTriggeredMacros[triggerPhrase]);
+                    }
+                    macroChoices.Add(triggerPhrase);
+                }
             }
             GrammarBuilder macroGrammarBuilder = new GrammarBuilder();
             macroGrammarBuilder.Culture = cultureInfo;
@@ -427,11 +445,12 @@ namespace CrewChiefV4
 
         public void Dispose()
         {
-            if (!initialised || disposed)
+            if (!initialised)
             {
                 return;
             }
-
+            return;
+            
             if (waveIn != null)
             {
                 try
@@ -444,7 +463,8 @@ namespace CrewChiefV4
             {
                 try
                 {
-                    // TODO_THREADS: with always on listening, this causes significant delay on shutdown, investigate (some worker thread alive).  Repro:  start app/close 
+                    // VL: there's a bug with recognizeAsyncCancel racing with Dispose.  Current workaround is a bit of Sleep.
+                    // See GlobalResources.Dispose
                     sre.Dispose();
                 }
                 catch (Exception) { }
@@ -460,7 +480,6 @@ namespace CrewChiefV4
                 triggerSre = null;
             }
             initialised = false;
-            disposed = true;
         }
 
         public SpeechRecogniser(CrewChief crewChief)
@@ -1276,7 +1295,7 @@ namespace CrewChiefV4
                         if (macroGrammar == e.Result.Grammar && macroLookup.ContainsKey(e.Result.Text))
                         {
                             this.lastRecognisedText = e.Result.Text;
-                            macroLookup[e.Result.Text].execute();
+                            macroLookup[e.Result.Text].execute(e.Result.Text);
                         }
                         else if (iracingPitstopGrammarList.Contains(e.Result.Grammar))
                         {
@@ -1446,7 +1465,7 @@ namespace CrewChiefV4
                         nAudioAlwaysOnkeepRecording = true;
                         Debug.Assert(nAudioAlwaysOnListenerThread == null, "nAudio AlwaysOn Listener Thread wasn't shut down correctly.");
 
-                        // This thread is synchronized in recongizeAsyncCancel
+                        // This thread is manually synchronized in recongizeAsyncCancel
                         nAudioAlwaysOnListenerThread = new Thread(() =>
                         {
                             waveIn.StartRecording();
