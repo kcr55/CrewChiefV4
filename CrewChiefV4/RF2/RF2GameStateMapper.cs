@@ -21,6 +21,7 @@ namespace CrewChiefV4.rFactor2
         private readonly bool enablePitLaneApproachHeuristics = UserSettings.GetUserSettings().getBoolean("enable_rf2_pit_lane_approach_heuristics");
         private readonly bool enableFCYPitStateMessages = UserSettings.GetUserSettings().getBoolean("enable_rf2_pit_state_during_fcy");
         private readonly bool forceRollingStart = UserSettings.GetUserSettings().getBoolean("force_rf2_rolling_start");
+        private readonly bool cacheTyreMappings = UserSettings.GetUserSettings().getBoolean("cache_rf2_tyre_mappings");
 
         // Stock Car Rules plugin message constants.
         private readonly string scrLuckyDogPassOnLeftUpper = "Lucky Dog: Pass Field On Left".ToUpperInvariant();
@@ -2198,7 +2199,7 @@ namespace CrewChiefV4.rFactor2
             // Note: this might not work perfectly with per vehicle upgrades, but this is good enough I think.
             // There are like 2 or 3 mods that allow different brands, and even then, indexes do match.
             var tyreType = TyreType.Unknown_Race;
-            if (this.compoundIndexToTyreType.TryGetValue(vehicleTelemetry.mFrontTireCompoundIndex, out tyreType))
+            if (cacheTyreMappings && this.compoundIndexToTyreType.TryGetValue(vehicleTelemetry.mFrontTireCompoundIndex, out tyreType))
                 return tyreType;
 
             tyreType = TyreType.Unknown_Race;

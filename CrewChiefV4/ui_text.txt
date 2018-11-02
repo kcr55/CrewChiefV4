@@ -1188,3 +1188,8 @@ slow_class_car_warnings_in_race_only_category = PIT_STOPS_AND_MULTICLASS
 record_sound_variety_data = Record sound variety data
 record_sound_variety_data_help = Log the number of times each sound is played and the number of versions of this sound. For sound pack developers
 record_sound_variety_data_category = AUDIO_VOICE_AND_CONTROLLERS
+
+cache_rf2_tyre_mappings = Cache RF2 tyre types
+cache_rf2_tyre_mappings_help = Use faster lookup method to map RF2 tyre types
+cache_rf2_tyre_mappings_filter = RF2_64BIT
+cache_rf2_tyre_mappings_category = FUEL_TEMPS_AND_DAMAGES;PIT_STOPS_AND_MULTICLASS

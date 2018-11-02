@@ -884,5 +884,8 @@
     <Setting Name="pit_box_time_countdown_end_position" Type="System.Int32" Scope="User">
       <Value Profile="(Default)">30</Value>
     </Setting>
+    <Setting Name="cache_rf2_tyre_mappings" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">True</Value>
+    </Setting>
   </Settings>
 </SettingsFile>

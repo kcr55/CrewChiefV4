@@ -3550,5 +3550,17 @@ namespace CrewChiefV4.Properties {
                 this["pit_box_time_countdown_end_position"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool cache_rf2_tyre_mappings {
+            get {
+                return ((bool)(this["cache_rf2_tyre_mappings"]));
+            }
+            set {
+                this["cache_rf2_tyre_mappings"] = value;
+            }
+        }
     }
 }
