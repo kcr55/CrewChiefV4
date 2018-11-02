@@ -997,7 +997,7 @@ namespace CrewChiefV4.rFactor2
             cgs.TyreData.TyreWearActive = true;
 
             // For now, all tyres will be reported as front compund.
-            var tt = this.MapToTyreType(ref playerTelemetry);
+            var tt = this.MapToTyreType(ref playerTelemetry, pgs == null ? TyreType.Unknown_Race : pgs.TyreData.FrontLeftTyreType, cgs.PitData.InPitlane || csd.IsNewSector);
 
             var wheelFrontLeft = playerTelemetry.mWheels[(int)rFactor2Constants.rF2WheelIndex.FrontLeft];
             cgs.TyreData.FrontLeftTyreType = tt;
@@ -1305,16 +1305,9 @@ namespace CrewChiefV4.rFactor2
                 var opponent = new OpponentData();
 
                 opponent.CarClass = vehicleCachedInfo.carClass;
-                opponent.CurrentTyres = this.MapToTyreType(ref vehicleTelemetry);
                 opponent.DriverRawName = vehicleCachedInfo.driverNameRawSanitized;
                 opponent.DriverNameSet = opponent.DriverRawName.Length > 0;
                 opponent.OverallPosition = vehicleScoring.mPlace;
-
-                // Telemetry isn't always available, initialize first tyre set 10 secs or more into race.
-                if (csd.SessionType == SessionType.Race && csd.SessionRunningTime > 10
-                    && opponentPrevious != null
-                    && opponentPrevious.TyreChangesByLap.Count == 0)  // If tyre for initial lap was never set.
-                    opponent.TyreChangesByLap[0] = opponent.CurrentTyres;
 
                 if (opponent.DriverNameSet && opponentPrevious == null && CrewChief.enableDriverNames)
                 {
@@ -1333,9 +1326,6 @@ namespace CrewChiefV4.rFactor2
                     foreach (var old in opponentPrevious.OpponentLapData)
                         opponent.OpponentLapData.Add(old);
 
-                    foreach (var old in opponentPrevious.TyreChangesByLap)
-                        opponent.TyreChangesByLap.Add(old.Key, old.Value);
-
                     opponent.NumPitStops = opponentPrevious.NumPitStops;
                     opponent.OverallPositionAtPreviousTick = opponentPrevious.OverallPosition;
                     opponent.ClassPositionAtPreviousTick = opponentPrevious.ClassPosition;
@@ -1349,6 +1339,22 @@ namespace CrewChiefV4.rFactor2
                 opponent.CurrentSectorNumber = vehicleScoring.mSector == 0 ? 3 : vehicleScoring.mSector;
                 var isNewSector = csd.IsNewSession || (opponentPrevious != null && opponentPrevious.CurrentSectorNumber != opponent.CurrentSectorNumber);
                 opponent.IsNewLap = csd.IsNewSession || (isNewSector && opponent.CurrentSectorNumber == 1 && opponent.CompletedLaps > 0);
+
+                // tyre stuff:
+                opponent.CurrentTyres = this.MapToTyreType(ref vehicleTelemetry, opponentPrevious == null ? TyreType.Unknown_Race : opponentPrevious.CurrentTyres,
+                    vehicleScoring.mInPits == 1 || isNewSector);
+                // Telemetry isn't always available, initialize first tyre set 10 secs or more into race.
+                if (csd.SessionType == SessionType.Race && csd.SessionRunningTime > 10
+                    && opponentPrevious != null
+                    && opponentPrevious.TyreChangesByLap.Count == 0)  // If tyre for initial lap was never set.
+                    opponent.TyreChangesByLap[0] = opponent.CurrentTyres;
+                // carry over existing tyre changes
+                if (opponentPrevious != null)
+                {
+                    foreach (var old in opponentPrevious.TyreChangesByLap)
+                        opponent.TyreChangesByLap.Add(old.Key, old.Value);
+                }
+                //
 
                 if (vehicleTelemetryAvailable)
                 {
@@ -1412,6 +1418,7 @@ namespace CrewChiefV4.rFactor2
                     && opponent.TyreChangesByLap.Count != 0)  // This should be initialized above
                 {
                     var prevTyres = opponent.TyreChangesByLap.Last().Value;
+
                     if (opponent.CurrentTyres != prevTyres)
                     {
                         opponent.TyreChangesByLap[opponent.CompletedLaps] = opponent.CurrentTyres;
@@ -2190,7 +2197,7 @@ namespace CrewChiefV4.rFactor2
             }
         }
 
-        private TyreType MapToTyreType(ref rF2VehicleTelemetry vehicleTelemetry)
+        private TyreType MapToTyreType(ref rF2VehicleTelemetry vehicleTelemetry, TyreType previousTyreType, Boolean deriveIfNotCached)
         {
             // Do not cache tyre type if telemetry is not available yet.
             if (vehicleTelemetry.mFrontTireCompoundName == null)
@@ -2201,6 +2208,10 @@ namespace CrewChiefV4.rFactor2
             var tyreType = TyreType.Unknown_Race;
             if (cacheTyreMappings && this.compoundIndexToTyreType.TryGetValue(vehicleTelemetry.mFrontTireCompoundIndex, out tyreType))
                 return tyreType;
+
+            // if we're not caching tyre mappings, only allow the tyre type to be checked if we're in the pits or starting a new sector
+            if (!cacheTyreMappings && deriveIfNotCached)
+                return previousTyreType;
 
             tyreType = TyreType.Unknown_Race;
 
